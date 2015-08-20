@@ -106,6 +106,23 @@ class TempoResults:
         self.phase_wraps = {}
         self.jump_ranges = []
 
+        tim = toa.TOAset.from_princeton_file(intimfn)
+        tim_ordered_index = np.argsort(tim.TOAs)
+
+        # if there are phase wraps in the tim file, we want to include those
+        # in the intial plot
+        for tim_wrap_index in tim.phase_wraps:
+            wrap_index = tim_ordered_index[tim_wrap_index]
+            self.phase_wraps[wrap_index] = \
+              tim.phase_wraps[tim_wrap_index]
+        
+        # if there are jumps in the tim file, we want to include those in the
+        # initial plot
+        for tim_jstart,tim_jend in tim.jump_ranges:
+            jstart = tim_ordered_index[tim_jstart]
+            jend = tim_ordered_index[tim_jend]
+            self.jump_ranges.append((jstart, jend))
+
         # Record filename
         self.inparfn = inparfn
         self.outparfn = outparfn
@@ -489,15 +506,18 @@ def savefigure(savefn='./resid2.tmp.ps'):
     print "Saving plot to %s" % savefn
     plt.savefig(savefn, orientation='landscape', papertype='letter')
 
-def reloadplot(tempo_results=None):
+def reloadplot(with_tempo_results=None):
+    global tempo_results
     global options
     # Reload residuals and replot
     print "Plotting..."
     fig = plt.gcf()
     fig.set_visible(False)
     plt.clf() # clear figure
-    if tempo_results is None:
+    if with_tempo_results is None:
         tempo_results = TempoResults(options.freqbands)
+    else:
+        tempo_results = with_tempo_results
     try:
         plot_data(tempo_results, options.xaxis, options.yaxis,
                   postfit=options.postfit, prefit=options.prefit,
@@ -701,6 +721,24 @@ def increment_phase_wrap(xdata, phase_offset):
     else:
         tempo_results.phase_wraps[where_wrap] = phase_offset
 
+def delete_jump_range(xdata):
+    global tempo_results
+    global options
+    if options.xaxis == 'mjd':
+        where_clicked = np.searchsorted(tempo_results.ordered_MJDs, xdata)
+    elif options.xaxis == 'year':
+        all_years = mjd_to_year(tempo_results.ordered_MJDs)
+        where_clicked = np.searchsorted(all_years, xdata)
+    elif options.xaxis == 'numtoa':
+        where_clicked = xdata
+    else:
+        return
+    for ii,(jstart,jend) in enumerate(tempo_results.jump_ranges):
+        if where_clicked > jstart and where_clicked < jend:
+            del tempo_results.jump_ranges[ii]
+            break
+
+
 def keypress(event):
     global tempo_results
     global tempo_history
@@ -744,6 +782,9 @@ def keypress(event):
             except: pass
         elif event.key == "backspace":
             tempo_results.phase_wraps = {}
+            reloadplot(tempo_results)
+        elif event.key == 'J':
+            delete_jump_range(event.xdata)
             reloadplot(tempo_results)
         elif event.key == 'T':
             run_tempo()
@@ -906,24 +947,8 @@ def main():
     tempo_results = TempoResults(options.freqbands)
     tempo_history = TempoHistory(tempo_results)
  
-    tim = toa.TOAset.from_princeton_file(tempo_results.intimfn)
-    tim_ordered_index = np.argsort(tim.TOAs)
-
-    # if there are phase wraps in the tim file, we want to include those
-    # in the intial plot
-    for tim_wrap_index in tim.phase_wraps:
-        wrap_index = tim_ordered_index[tim_wrap_index]
-        tempo_results.phase_wraps[wrap_index] = tim.phase_wraps[tim_wrap_index]
-    
-    # if there are jumps in the tim file, we want to include those in the
-    # initial plot
-    for tim_jstart,tim_jend in tim.jump_ranges:
-        jstart = tim_ordered_index[tim_jstart]
-        jend = tim_ordered_index[tim_jend]
-        tempo_results.jump_ranges.append((jstart, jend))
-
     create_plot()
-    reloadplot(tempo_results)
+    reloadplot()
 
     if options.interactive:
         fig = plt.gcf() # current figure
