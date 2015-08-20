@@ -1,9 +1,7 @@
 #!/usr/bin/env python
 
-# A simple command line version of plotres written in python
-# using matplotlib and numpy
-#
-#           Patrick Lazarus, Feb 26th, 2009
+# Copied from Patrick Lazarus's pyplotres 2015 Aug 18,
+# then mangled by Erik Madsen into its present form
 
 import optparse
 import sys
@@ -11,9 +9,12 @@ import re
 import os
 import types
 import warnings
+import subprocess
+from shutil import copyfile
 
 import matplotlib
 import matplotlib.pyplot as plt
+from matplotlib.transforms import offset_copy
 import numpy as np
 
 import pyslalib.slalib as slalib
@@ -22,6 +23,8 @@ import parfile as par
 import residuals
 
 from scipy.cluster.vq import kmeans2
+
+import toa
 
 # Available x-axis types
 xvals = ['mjd', 'year', 'numtoa', 'orbitphase']
@@ -75,13 +78,13 @@ def find_freq_clusters(freqs):
         freqbands.append([kmeans[-2:].mean(), 'inf'])
         return freqbands
 
-
 class TempoResults:
     def __init__(self, freqbands):
         """Read TEMPO results (resid2.tmp, tempo.lis, timfile and parfiles)
             freqbands is a list of frequency pairs to display.
         """
-        # Open tempo.lis. Parse it and find input .tim and .par files. Also find output .par file.
+        # Open tempo.lis. Parse it and find input .tim and .par files.
+        # Also find output .par file.
         inputfiles_re = re.compile(r"Input data from (.*\.tim.*),  Parameters from (.*\.par.*)")
         outputfile_re = re.compile(r"Assumed parameters -- PSR (.*)$")
         tempolisfile = open("tempo.lis")
@@ -100,6 +103,8 @@ class TempoResults:
                 break
         tempolisfile.close()
 
+        self.phase_wraps = {}
+
         # Record filename
         self.inparfn = inparfn
         self.outparfn = outparfn
@@ -115,6 +120,9 @@ class TempoResults:
         self.max_TOA = r.bary_TOA.max()
         self.min_TOA = r.bary_TOA.min()
 
+        ordered_index = np.argsort(r.bary_TOA)
+        self.ordered_MJDs = r.bary_TOA[ordered_index]
+
         if freqbands is None:
             self.freqbands = find_freq_clusters(r.bary_freq)
         else:
@@ -123,11 +131,13 @@ class TempoResults:
         for lo,hi in self.freqbands:
             indices = (r.bary_freq>=lo) & (r.bary_freq<hi)
             self.residuals[get_freq_label(lo, hi)] = \
-                 Resids(r.bary_TOA[indices], r.bary_freq[indices], \
-                        np.arange(r.numTOAs)[indices], r.orbit_phs[indices], \
-                        r.postfit_phs[indices], r.postfit_sec[indices], \
-                        r.prefit_phs[indices], r.prefit_sec[indices], \
-                        r.uncertainty[indices], r.weight[indices], \
+                 Resids(r.bary_TOA[indices], r.bary_freq[indices],
+                        #np.arange(r.numTOAs)[indices],
+                        ordered_index[indices],
+                        r.orbit_phs[indices],
+                        r.postfit_phs[indices], r.postfit_sec[indices],
+                        r.prefit_phs[indices], r.prefit_sec[indices],
+                        r.uncertainty[indices], r.weight[indices],
                         self.inpar, self.outpar)
 
     def get_info(self, freq_label, index, postfit=True):
@@ -143,20 +153,30 @@ class TempoResults:
         description.append("\tNumber: %s" % r.TOA_index[index][0])
         description.append("\tEpoch (MJD): %s" % r.bary_TOA[index][0])
         if yvals[yind] == "phase":
-            description.append("\tPre-fit residual (phase): %s" % r.prefit_phs[index][0])
-            description.append("\tPost-fit residual (phase): %s" % r.postfit_phs[index][0])
+            description.append("\tPre-fit residual (phase): %s" % \
+              r.prefit_phs[index][0])
+            description.append("\tPost-fit residual (phase): %s" % \
+              r.postfit_phs[index][0])
             if postfit:
-                description.append("\tUncertainty (phase): %s" % (r.uncertainty[index][0]/r.outpar.P0))
+                description.append("\tUncertainty (phase): %s" % \
+                  (r.uncertainty[index][0]/r.outpar.P0))
             else:
-                description.append("\tUncertainty (phase): %s" % (r.uncertainty[index][0]/r.inpar.P0))
+                description.append("\tUncertainty (phase): %s" % \
+                  (r.uncertainty[index][0]/r.inpar.P0))
         elif yvals[yind] == "usec":
-            description.append("\tPre-fit residual (usec): %s" % (r.prefit_sec[index][0]*1e6))
-            description.append("\tPost-fit residual (usec): %s" % (r.postfit_sec[index][0]*1e6))
-            description.append("\tUncertainty (usec): %s" % (r.uncertainty[index][0]*1e6))
+            description.append("\tPre-fit residual (usec): %s" % \
+              (r.prefit_sec[index][0]*1e6))
+            description.append("\tPost-fit residual (usec): %s" % \
+              (r.postfit_sec[index][0]*1e6))
+            description.append("\tUncertainty (usec): %s" % \
+              (r.uncertainty[index][0]*1e6))
         elif yvals[yind] == "sec":
-            description.append("\tPre-fit residual (sec): %s" % r.prefit_sec[index][0])
-            description.append("\tPost-fit residual (sec): %s" % r.postfit_sec[index][0])
-            description.append("\tUncertainty (sec): %s" % r.uncertainty[index][0])
+            description.append("\tPre-fit residual (sec): %s" % \
+              r.prefit_sec[index][0])
+            description.append("\tPost-fit residual (sec): %s" % \
+              r.postfit_sec[index][0])
+            description.append("\tUncertainty (sec): %s" % \
+              r.uncertainty[index][0])
         description.append("\tFrequency (MHz): %s" % r.bary_freq[index][0])
         return description
 
@@ -176,19 +196,19 @@ class Resids:
             uncertainty
             weight
     """
-    def __init__(self, bary_TOA, bary_freq, TOA_index, orbit_phs, \
-                    postfit_phs, postfit_sec, prefit_phs, prefit_sec, \
-                    uncertainty, weight, inpar, outpar):
-        self.bary_TOA = bary_TOA
-        self.bary_freq = bary_freq
-        self.TOA_index = TOA_index
-        self.orbit_phs = orbit_phs
-        self.postfit_phs = postfit_phs
-        self.postfit_sec = postfit_sec
-        self.prefit_phs = prefit_phs
-        self.prefit_sec = prefit_sec
-        self.uncertainty = uncertainty
-        self.weight = weight
+    def __init__(self, bary_TOA, bary_freq, TOA_index,
+                 orbit_phs, postfit_phs, postfit_sec, prefit_phs, prefit_sec,
+                 uncertainty, weight, inpar, outpar):
+        self.bary_TOA = np.array(bary_TOA)
+        self.bary_freq = np.array(bary_freq)
+        self.TOA_index = np.array(TOA_index)
+        self.orbit_phs = np.array(orbit_phs)
+        self.postfit_phs = np.array(postfit_phs)
+        self.postfit_sec = np.array(postfit_sec)
+        self.prefit_phs = np.array(prefit_phs)
+        self.prefit_sec = np.array(prefit_sec)
+        self.uncertainty = np.array(uncertainty)
+        self.weight = np.array(weight)
         self.inpar = inpar
         self.outpar = outpar
 
@@ -201,13 +221,13 @@ class Resids:
             raise ValueError("key must be of type string.")
         xopt = key.lower()
         if xopt == 'numtoa':
-            xdata = self.TOA_index
+            xdata = self.TOA_index.copy()
             xlabel = "TOA Number"
         elif xopt == 'mjd':
-            xdata = self.bary_TOA
+            xdata = self.bary_TOA.copy()
             xlabel = "MJD"
         elif xopt == 'orbitphase':
-            xdata = self.orbit_phs
+            xdata = self.orbit_phs.copy()
             xlabel = "Orbital Phase"
         elif xopt == 'year':
             xdata = mjd_to_year(self.bary_TOA)
@@ -217,7 +237,7 @@ class Resids:
         return (xlabel, xdata)
 
 
-    def get_ydata(self, key, postfit=True):
+    def get_ydata(self, key, postfit=True, phase_wraps={}):
         """Return label describing yaxis and the corresponding
             data/errors given keyword 'key'.
             'postfit' is a boolean argument that determines if
@@ -228,7 +248,7 @@ class Resids:
         yopt = key.lower()
         if postfit:
             if yopt == 'phase':
-                ydata = self.postfit_phs
+                ydata = self.postfit_phs.copy()
                 #
                 # NOTE: Should use P at TOA not at PEPOCH
                 #
@@ -239,14 +259,14 @@ class Resids:
                 yerror = self.uncertainty*1e6
                 ylabel = "Residuals (uSeconds)"
             elif yopt == 'sec':
-                ydata = self.postfit_sec
-                yerror = self.uncertainty
+                ydata = self.postfit_sec.copy()
+                yerror = self.uncertainty.copy()
                 ylabel = "Residuals (Seconds)"
             else:
                 raise ValueError("Unknown yaxis type (%s)." % yopt)
         else:
             if yopt=='phase':
-                ydata = self.prefit_phs
+                ydata = self.prefit_phs.copy()
                 #
                 # NOTE: Should use P at TOA not at PEPOCH
                 #
@@ -257,16 +277,29 @@ class Resids:
                 yerror = self.uncertainty*1e6
                 ylabel = "Residuals (uSeconds)"
             elif yopt=='sec':
-                ydata = self.prefit_sec
-                yerror = self.uncertainty
+                ydata = self.prefit_sec.copy()
+                yerror = self.uncertainty.copy()
                 ylabel = "Residuals (Seconds)"
             else:
                 raise ValueError("Unknown yaxis type (%s)." % yopt)
+                 
+        if postfit: 
+            for wrap_index in phase_wraps:
+                if yopt=='phase':
+                    ydata[self.TOA_index >= wrap_index] += \
+                      phase_wraps[wrap_index]
+                elif yopt=='usec':
+                    ydata[self.TOA_index >= wrap_index] += \
+                      phase_wraps[wrap_index]*self.outpar.P0*1e6
+                elif yopt=='sec':
+                    ydata[self.TOA_index >= wrap_index] += \
+                      phase_wraps[wrap_index]*self.outpar.P0
+
         return (ylabel, ydata, yerror)
 
 
-def plot_data(tempo_results, xkey, ykey, postfit=True, prefit=False, \
-            interactive=True, mark_peri=False, show_legend=True):
+def plot_data(tempo_results, xkey, ykey, postfit=True, prefit=False,
+              interactive=True, mark_peri=False, show_legend=True):
     # figure out what should be plotted
     # True means to plot postfit
     # False means to plot prefit
@@ -284,6 +317,7 @@ def plot_data(tempo_results, xkey, ykey, postfit=True, prefit=False, \
     axes = []
     handles = []
     labels = []
+
     for usepostfit in to_plot_postfit:
         TOAcount = 0
         # All subplots are in a single column
@@ -302,17 +336,45 @@ def plot_data(tempo_results, xkey, ykey, postfit=True, prefit=False, \
         for ii,(lo,hi) in enumerate(tempo_results.freqbands):
             freq_label = get_freq_label(lo, hi)
             resids = tempo_results.residuals[freq_label]
+            
             xlabel, xdata = resids.get_xdata(xkey)
-            ylabel, ydata, yerr = resids.get_ydata(ykey, usepostfit)
+            ylabel, ydata, yerr = resids.get_ydata(ykey, usepostfit,
+                                                   tempo_results.phase_wraps)
             if len(xdata):
                 # Plot the residuals
                 handle = plt.errorbar(xdata, ydata, yerr=yerr, fmt='.', \
                                       label=freq_label, picker=5,
                                       c=colors[len(tempo_results.freqbands)][ii])
+
                 if subplot == 1:
                     handles.append(handle[0])
                     labels.append(freq_label)
                 TOAcount += xdata.size
+
+        # Plot phase wraps
+        text_offset = offset_copy(axes[-1].transData, x=5, y=-10,
+                                  units='dots')
+        for wrap_index in tempo_results.phase_wraps:
+            wrap_mjd_hi = tempo_results.ordered_MJDs[wrap_index]
+            if wrap_index > 0:
+                wrap_mjd_lo = tempo_results.ordered_MJDs[wrap_index-1]
+            else:
+                wrap_mjd_lo = wrap_mjd_hi
+            if xkey == 'mjd':
+                wrap_x = 0.5*(wrap_mjd_hi + wrap_mjd_lo)
+            elif xkey == 'year':
+                wrap_x = mjd_to_year(0.5*(wrap_mjd_hi + wrap_mjd_lo))
+            elif xkey == 'numtoa':
+                wrap_x = wrap_index - 0.5
+            else:
+                break
+            wrap_color = ['pink', 'red'] # [prefit, postfit]
+            plt.axvline(wrap_x, ls=':', label='_nolegend_',
+                        color=wrap_color[usepostfit], lw=1.5)
+            plt.text(wrap_x, axes[-1].get_ylim()[1],
+                     "%+d" % tempo_results.phase_wraps[wrap_index],
+                     transform=text_offset, size='x-small',
+                     color=wrap_color[usepostfit])
         
         if subplot > 1:
             axes[0].set_xlim((xmin, xmax))
@@ -355,8 +417,9 @@ def plot_data(tempo_results, xkey, ykey, postfit=True, prefit=False, \
 
     # Write name of input files used for timing on figure
     if interactive:
-        fntext = "TOA file: %s, Parameter file: %s" % \
-                    (tempo_results.intimfn, tempo_results.inparfn)
+        fntext = "Solution %d of %d, TOA file: %s, Parameter file: %s" % \
+          (tempo_history.current_index+1, tempo_history.get_nsolutions(),
+           tempo_results.intimfn, tempo_results.inparfn)
         figure_text = plt.figtext(0.01, 0.01, fntext, verticalalignment='bottom', \
                             horizontalalignment='left')
 
@@ -384,19 +447,21 @@ def savefigure(savefn='./resid2.tmp.ps'):
     print "Saving plot to %s" % savefn
     plt.savefig(savefn, orientation='landscape', papertype='letter')
 
-def reloadplot():
+def reloadplot(tempo_results=None):
     global options
+    #global phase_wraps
     # Reload residuals and replot
     print "Plotting..."
     fig = plt.gcf()
     fig.set_visible(False)
     plt.clf() # clear figure
-    tempo_results = TempoResults(options.freqbands)
+    if tempo_results is None:
+        tempo_results = TempoResults(options.freqbands)
     try:
-        plot_data(tempo_results, options.xaxis, options.yaxis, \
-                postfit=options.postfit, prefit=options.prefit, \
-                interactive=options.interactive, \
-                mark_peri=options.mark_peri, show_legend=options.legend)
+        plot_data(tempo_results, options.xaxis, options.yaxis,
+                  postfit=options.postfit, prefit=options.prefit,
+                  interactive=options.interactive,
+                  mark_peri=options.mark_peri, show_legend=options.legend)
     except EmptyPlotValueError, msg:
         print msg
         print "Press 'p'/'P' to add prefit/postfit plot."
@@ -452,6 +517,12 @@ def print_help():
     print "\tz - Toggle Zoom-mode on/off"
     print "\tm - Toggle marking of periastron passages on/off"
     print "\tL - Toggle legend on/off"
+    print "\t+ - Insert positive phase wrap at cursor position"
+    print "\t- - Insert negative phase wrap at cursor position"
+    print "\t[Backspace] - Remove all phase wraps"
+    print "\tT - Run Tempo with current postfit parameters and phase wraps"
+    print "\tb - Return to previous Tempo solution"
+    print "\tn - Go to next Tempo solution"
     print "\to - Go to original view"
     print "\t< - Go to previous view"
     print "\t> - Go to next view"
@@ -459,14 +530,138 @@ def print_help():
     print "\ty - Sey y-axis limits (terminal input required)"
     print "\tr - Reload residuals"
     print "\tt - Cycle through y-axis types ('phase', 'usec', 'sec')"
-    print "\t[Space] - Cycle through x-axis types ('MJD', 'year', 'numTOA', 'orbitphase')"
+    print "\t[Space] - Cycle through x-axis types ('mjd', 'year', 'numtoa', 'orbitphase')"
     print "\t[Left mouse] - Select TOA (display info in terminal)"
     print "\t             - Select zoom region (if Zoom-mode is on)"
     print "-"*80
 
+def run_tempo():
+    global tempo_results
+    global tempo_history
+    par_fname = tempo_results.outpar.FILE
+    tempo_history.save_outpar(par_fname)
+    if par_fname.split('.')[-1] == 'tempy':
+        new_par = par_fname
+    else:
+        new_par = par_fname + '.tempy'
+    copyfile(tempo_results.outpar.FILE, new_par)
+    tim = toa.TOAset.from_princeton_file(tempo_results.intimfn)
+    tim.phase_wraps = {}
+    tim_ordered_index = np.argsort(tim.TOAs)
+    for wrap_index in tempo_results.phase_wraps:
+        tim_wrap_index = np.where(tim_ordered_index == wrap_index)[0][0]
+        tim.phase_wraps[tim_wrap_index] = tempo_results.phase_wraps[wrap_index]
+    if tempo_results.intimfn.split('.')[-1] == 'tempy':
+        new_timfn = tempo_results.intimfn
+    else:
+        new_timfn = tempo_results.intimfn + ".tempy"
+    tim.to_princeton_file(new_timfn)
+    subprocess.call(["tempo", "-f", new_par, new_timfn])
+
+class TempoHistory:
+    def __init__(self, tempo_results=None):
+        self.current_index = -1
+        # parfiles are currently stored simply as raw strings
+        self.inpars = []
+        self.outpars = []
+        # timfiles are TOAset objects
+        self.timfiles = []
+        self.tempo_results = []
+        if tempo_results is not None:
+            self.append(tempo_results)
+
+    def get_nsolutions(self):
+        return len(self.tempo_results)   
+
+    def seek_next_solution(self):
+        new_index = self.current_index + 1
+        if new_index < self.get_nsolutions():
+            self.current_index = new_index
+            print "Moving ahead to solution %d of %d" % (new_index + 1,
+                                                         self.get_nsolutions())
+        else:
+            print "Already at solution %d of %d" % (self.get_nsolutions(),
+                                                    self.get_nsolutions())
+
+    def seek_prev_solution(self):
+        new_index = self.current_index - 1
+        if new_index >= 0 and self.get_nsolutions():
+            self.current_index = new_index
+            print "Moving back to solution %d of %d" % (new_index + 1,
+                                                        self.get_nsolutions())
+        else:
+            print "Already at solution 1 of %d" % (self.get_nsolutions())
+    
+    def seek_first_solution(self):
+        if self.get_nsolutions():
+            self.current_index = 0
+
+    def seek_solution(self, n):
+        if n >= 0 and n < self.get_nsolutions():
+            self.current_index = n
+
+    def clear_future_history(self):
+        end = self.current_index + 1
+        self.inpars = self.inpars[:end]
+        self.outpars = self.outpars[:end]
+        self.timfiles = self.timfiles[:end]
+        self.tempo_results = self.tempo_results[:end]
+
+    def append(self, tempo_results, increment_current=True):
+        self.clear_future_history()
+        with open(tempo_results.inparfn, 'r') as f:
+            inpar = f.readlines()
+            self.inpars.append(inpar)
+        with open(tempo_results.outparfn, 'r') as f:
+            outpar = f.readlines()
+            self.outpars.append(outpar)
+        timfile = toa.TOAset.from_princeton_file(tempo_results.intimfn)
+        self.timfiles.append(timfile)
+        self.tempo_results.append(tempo_results)
+        if increment_current:
+            self.current_index += 1
+
+    def get_current_tempo_results(self):
+        return self.tempo_results[self.current_index]
+
+    def save_inpar(self, fname):
+        with open(fname, 'w') as f:
+            f.writelines(self.inpars[self.current_index])
+        print "Wrote input parfile %s" % fname
+
+    def save_outpar(self, fname):
+        with open(fname, 'w') as f:
+            f.writelines(self.outpars[self.current_index])
+        print "Wrote output parfile %s" % fname
+
+    def save_timfile(self, fname):
+        self.timfiles[self.current_index].to_princeton_file(fname)
+        print "Wrote tim file %s" % fname
+
+def increment_phase_wrap(xdata, phase_offset):
+    global tempo_results
+    global options
+    if options.xaxis == 'mjd':
+        where_wrap = np.searchsorted(tempo_results.ordered_MJDs, xdata)
+    elif options.xaxis == 'year':
+        all_years = mjd_to_year(tempo_results.ordered_MJDs)
+        where_wrap = np.searchsorted(all_years, xdata)
+    elif options.xaxis == 'numtoa':
+        where_wrap = int(np.ceil(xdata))
+    else:
+        return
+    if where_wrap >= len(tempo_results.ordered_MJDs):
+        return
+    if where_wrap in tempo_results.phase_wraps:
+        tempo_results.phase_wraps[where_wrap] += phase_offset
+        if tempo_results.phase_wraps[where_wrap] == 0:
+            del tempo_results.phase_wraps[where_wrap]
+    else:
+        tempo_results.phase_wraps[where_wrap] = phase_offset
 
 def keypress(event):
     global tempo_results
+    global tempo_history
     global options
     global xind, xvals
     global yind, yvals
@@ -478,7 +673,7 @@ def keypress(event):
         elif event.key.lower() == 'c':
             options.freqbands = None
             reloadplot()
-        elif event.key.lower() == 'r':
+        elif event.key == 'r':
             reloadplot()
         elif event.key.upper() == 'L':
             leg = plt.gcf().legends[0]
@@ -494,6 +689,40 @@ def keypress(event):
             print "Toggling periastron passage markings..."
             options.mark_peri = not options.mark_peri
             reloadplot()
+        elif event.key == '+' or event.key == '=':
+            try:
+                increment_phase_wrap(event.xdata, 1)
+                reloadplot(tempo_results)
+            except:
+                pass
+        elif event.key == '-' or event.key == '_':
+            try:
+                increment_phase_wrap(event.xdata, -1)
+                reloadplot(tempo_results)
+            except: pass
+        elif event.key == "backspace":
+            tempo_results.phase_wraps = {}
+            reloadplot(tempo_results)
+        elif event.key == 'T':
+            run_tempo()
+            tempo_results = TempoResults(options.freqbands)
+            tempo_history.append(tempo_results)
+            reloadplot()
+        elif event.key.lower() == 'b':
+            # Previous solution
+            tempo_history.seek_prev_solution()
+            tempo_results = tempo_history.get_current_tempo_results()
+            reloadplot(tempo_results)
+        elif event.key.lower() == 'n':
+            # Next solution
+            tempo_history.seek_next_solution()
+            tempo_results = tempo_history.get_current_tempo_results()
+            reloadplot(tempo_results)
+        elif event.key == 'R':
+            # First solution
+            tempo_history.seek_first_solution()
+            tempo_results = tempo_history.get_current_tempo_results()
+            reloadplot(tempo_results)
         elif event.key.lower() == 'o':
             # Restore plot to original view
             print "Restoring plot..."
@@ -510,22 +739,22 @@ def keypress(event):
             xind = (xind + 1) % len(xvals)
             print "Toggling plot type...[%s]"%xvals[xind], xind
             options.xaxis = xvals[xind]
-            reloadplot()
-        elif event.key.lower() == 't':
+            reloadplot(tempo_results)
+        elif event.key == 't':
             yind = (yind + 1) % len(yvals)
             print "Toggling plot scale...[%s]"%yvals[yind], yind
             options.yaxis = yvals[yind]
-            reloadplot()
+            reloadplot(tempo_results)
         elif event.key == 'p':
             options.prefit = not options.prefit
             print "Toggling prefit-residuals display to: %s" % \
                     ((options.prefit and "ON") or "OFF")
-            reloadplot()
+            reloadplot(tempo_results)
         elif event.key == 'P':
             options.postfit = not options.postfit
             print "Toggling postfit-residuals display to: %s" % \
                     ((options.postfit and "ON") or "OFF")
-            reloadplot()
+            reloadplot(tempo_results)
         elif event.key.lower() == 'x':
             # Set x-axis limits
             print "Setting x-axis limits. User input required..."
@@ -628,9 +857,18 @@ def parse_options():
 
 def main():
     global tempo_results
+    global tempo_history
     global options
     options = parse_options()
     tempo_results = TempoResults(options.freqbands)
+    tempo_history = TempoHistory(tempo_results)
+
+    tim = toa.TOAset.from_princeton_file(tempo_results.intimfn)
+    tim_ordered_index = np.argsort(tim.TOAs)
+    for tim_wrap_index in tim.phase_wraps:
+        wrap_index = tim_ordered_index[tim_wrap_index]
+        tempo_results.phase_wraps[wrap_index] = tim.phase_wraps[tim_wrap_index]
+    
     create_plot()
     reloadplot()
 
