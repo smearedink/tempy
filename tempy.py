@@ -813,7 +813,7 @@ def mjd_to_year(mjds):
 def parse_options():
     (options, sys.argv) = parser.parse_args()
     if sys.argv==[]:
-        sys.argv = ['pyplotres.py']
+        sys.argv = ['tempy.py']
     if not options.freqs:
         # Default frequency bands
         freqbands = [['0', '400'],
@@ -908,8 +908,7 @@ class EmptyPlotValueError(ValueError):
 
 
 if __name__=='__main__':
-    parser = optparse.OptionParser(prog="pyplotres.py", \
-                        version="v1.2 Patrick Lazarus (Mar. 29, 2010)")
+    parser = optparse.OptionParser(prog="tempy.py")
     parser.add_option('-f', '--freq', dest='freqs', action='append', \
                         help="Band of frequencies, in MHz, to be plotted " \
                              "(format xxx:yyy). Each band will have a " \
