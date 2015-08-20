@@ -843,15 +843,16 @@ def parse_options():
 
     if not options.prefit and not options.postfit:
         # If neither prefit or postfit are selected
-        # show postfit
+        # show both
         options.postfit = True
+        options.prefit = True
 
     if options.xaxis.lower() not in xvals:
-        raise BadOptionValueError("Option to -x/--x-axis (%s) is not permitted." % \
-                            options.xaxis)
+        raise BadOptionValueError("Option to -x/--x-axis (%s) is not "\
+          "permitted." % options.xaxis)
     if options.yaxis.lower() not in yvals:
-        raise BadOptionValueError("Option to -y/--y-axis (%s) is not permitted." % \
-                            options.yaxis)
+        raise BadOptionValueError("Option to -y/--y-axis (%s) is not "\
+          "permitted." % options.yaxis)
     return options
 
 
