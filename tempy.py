@@ -104,6 +104,7 @@ class TempoResults:
         tempolisfile.close()
 
         self.phase_wraps = {}
+        self.jump_ranges = []
 
         # Record filename
         self.inparfn = inparfn
@@ -375,7 +376,48 @@ def plot_data(tempo_results, xkey, ykey, postfit=True, prefit=False,
                      "%+d" % tempo_results.phase_wraps[wrap_index],
                      transform=text_offset, size='x-small',
                      color=wrap_color[usepostfit])
-        
+
+        ymin, ymax = axes[-1].get_ylim()
+
+        # Plot jump ranges
+        for jstart,jend in tempo_results.jump_ranges:
+            jstart_mjd = tempo_results.ordered_MJDs[jstart]
+            jend_mjd = tempo_results.ordered_MJDs[jend]
+            extend_frac = 0.1
+            if jstart > 0:
+                jstart_mjd_before = tempo_results.ordered_MJDs[jstart-1]
+            else:
+                jstart_mjd_before = jstart_mjd
+            if jend < len(tempo_results.ordered_MJDs)-1:
+                jend_mjd_after = tempo_results.ordered_MJDs[jend+1]
+            else:
+                jend_mjd_after = jend_mjd
+            dist_before = jstart_mjd - \
+              ((1-extend_frac)*jstart_mjd + extend_frac*jstart_mjd_before)
+            dist_after = (extend_frac*jend_mjd_after + \
+              (1-extend_frac)*jend_mjd) - jend_mjd
+            dist_mjd = min(dist_before, dist_after)
+            if dist_mjd < 1e-8:
+                dist_mjd = max(dist_before, dist_after)
+            jstart_mjd -= dist_mjd
+            jend_mjd += dist_mjd
+            if xkey == 'mjd':
+                jstart_x = jstart_mjd
+                jend_x = jend_mjd
+            elif xkey == 'year':
+                jstart_x = mjd_to_year(jstart_mjd)[0]
+                jend_x = mjd_to_year(jend_mjd)[0]
+            elif xkey == 'numtoa':
+                jstart_x = jstart + extend_frac
+                jend_x = jend - extend_frac
+            else:
+                break
+            jstart_color = ['pink', 'red'] # [prefit, postfit]
+            jend_color = ['cyan', 'green'] # [prefit, postfit]
+            plt.fill_betweenx([ymin, ymax], jstart_x, jend_x,
+                              facecolor='yellow', lw=0, alpha=0.3)
+            axes[-1].set_ylim((ymin, ymax))
+
         if subplot > 1:
             axes[0].set_xlim((xmin, xmax))
         
@@ -449,7 +491,6 @@ def savefigure(savefn='./resid2.tmp.ps'):
 
 def reloadplot(tempo_results=None):
     global options
-    #global phase_wraps
     # Reload residuals and replot
     print "Plotting..."
     fig = plt.gcf()
@@ -539,6 +580,7 @@ def run_tempo():
     global tempo_results
     global tempo_history
     par_fname = tempo_results.outpar.FILE
+    # in case we've gone back to a previous Tempo iteration, save the parfile
     tempo_history.save_outpar(par_fname)
     if par_fname.split('.')[-1] == 'tempy':
         new_par = par_fname
@@ -863,15 +905,25 @@ def main():
     options = parse_options()
     tempo_results = TempoResults(options.freqbands)
     tempo_history = TempoHistory(tempo_results)
-
+ 
     tim = toa.TOAset.from_princeton_file(tempo_results.intimfn)
     tim_ordered_index = np.argsort(tim.TOAs)
+
+    # if there are phase wraps in the tim file, we want to include those
+    # in the intial plot
     for tim_wrap_index in tim.phase_wraps:
         wrap_index = tim_ordered_index[tim_wrap_index]
         tempo_results.phase_wraps[wrap_index] = tim.phase_wraps[tim_wrap_index]
     
+    # if there are jumps in the tim file, we want to include those in the
+    # initial plot
+    for tim_jstart,tim_jend in tim.jump_ranges:
+        jstart = tim_ordered_index[tim_jstart]
+        jend = tim_ordered_index[tim_jend]
+        tempo_results.jump_ranges.append((jstart, jend))
+
     create_plot()
-    reloadplot()
+    reloadplot(tempo_results)
 
     if options.interactive:
         fig = plt.gcf() # current figure
