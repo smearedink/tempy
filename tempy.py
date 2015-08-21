@@ -438,13 +438,13 @@ def plot_data(tempo_results, xkey, ykey, postfit=True, prefit=False,
             else:
                 break
             plt.fill_betweenx([ymin, ymax], jstart_x, jend_x,
-                              facecolor='yellow', lw=0, alpha=0.3)
+                              edgecolor="orange", facecolor='yellow', lw=0.5, alpha=0.3)
             axes[-1].set_ylim((ymin, ymax))
 
         # set up span selector for setting new jump ranges
        
         options.jump_spans[ax_types[-1]] = SpanSelector(axes[-1], select_jump_range, 'horizontal', useblit=True, rectprops=dict(alpha=0.5, facecolor='orange'))
-        options.jump_spans[ax_types[-1]].visible = False
+        options.jump_spans[ax_types[-1]].visible = options.jump_mode
 
         if subplot > 1:
             axes[0].set_xlim((xmin, xmax))
@@ -547,27 +547,37 @@ def reloadplot(with_tempo_results=None):
 
 
 def redrawplot():
-    plt.draw()         #plt.show is keeping the plot open on nimrod, as opposed to plt.draw
+    #plt.show is keeping the plot open on nimrod, as opposed to plt.draw
+    plt.draw()
     #plt.show()
 
 def quit():
     print "Quitting..."
     sys.exit(0)
 
+def click(event):
+    # Remove jump range if in jump edit mode
+    global options
+    if event.button == 3:
+        if options.jump_mode:
+            delete_jump_range(event.xdata)
+            reloadplot(tempo_results)
+
 
 def pick(event):
     global tempo_results
-    index = event.ind
-    axes = event.mouseevent.inaxes
-    if axes:
-        title = axes.get_title()
-        postfit = ("Postfit" in title)
-    if len(index) == 1:
-        freq_label = event.artist.get_label()
-        info = tempo_results.get_info(freq_label, index, postfit)
-        print_text(info)
-    else:
-        print "Multiple TOAs selected. Zoom in and try again."
+    if event.mouseevent.button == 1:
+        index = event.ind
+        axes = event.mouseevent.inaxes
+        if axes:
+            title = axes.get_title()
+            postfit = ("Postfit" in title)
+        if len(index) == 1:
+            freq_label = event.artist.get_label()
+            info = tempo_results.get_info(freq_label, index, postfit)
+            print_text(info)
+        else:
+            print "Multiple TOAs selected. Zoom in and try again."
 
 
 def print_text(lines, *args, **kwargs):
@@ -589,8 +599,8 @@ def print_help():
     print "\tz - Toggle Zoom-mode on/off"
     print "\tm - Toggle marking of periastron passages on/off"
     print "\tL - Toggle legend on/off"
-    print "\tj - Toggle jump insert mode (click to start/end jump range)"
-    print "\tJ - Remove jump range at cursor position"
+    print "\tj - Toggle jump edit mode (left click to start/end jump range,\n"\
+          "\t    right click to remove jump range)"
     print "\t+ - Insert positive phase wrap at cursor position"
     print "\t- - Insert negative phase wrap at cursor position"
     print "\t[Backspace] - Remove all phase wraps"
@@ -604,7 +614,8 @@ def print_help():
     print "\ty - Sey y-axis limits (terminal input required)"
     print "\tr - Reload residuals"
     print "\tt - Cycle through y-axis types ('phase', 'usec', 'sec')"
-    print "\t[Space] - Cycle through x-axis types ('mjd', 'year', 'numtoa', 'orbitphase')"
+    print "\t[Space] - Cycle through x-axis types ('mjd', 'year', 'numtoa',\n"\
+          "\t          'orbitphase')"
     print "\t[Left mouse] - Select TOA (display info in terminal)"
     print "\t             - Select zoom region (if Zoom-mode is on)"
     print "-"*80
@@ -762,6 +773,8 @@ def select_jump_range(xdata_min, xdata_max):
     elif options.xaxis == 'numtoa':
         xmin = int(np.ceil(xdata_min))
         xmax = int(np.floor(xdata_max))
+    if xmin >= xmax:
+        return
     xmin_in_jump_range = is_in_jump_range(xmin)
     xmax_in_jump_range = is_in_jump_range(xmax-1)
     if xmin_in_jump_range is None and xmax_in_jump_range is None:
@@ -769,8 +782,8 @@ def select_jump_range(xdata_min, xdata_max):
         reloadplot(tempo_results)
     else:
         print "Region overlaps with existing jump range"
-    for k in options.jump_spans:
-        options.jump_spans[k].visible = False
+    #for k in options.jump_spans:
+    #    options.jump_spans[k].visible = False
 
 def delete_jump_range(xdata):
     global tempo_results
@@ -834,16 +847,17 @@ def keypress(event):
         elif event.key == "backspace":
             tempo_results.phase_wraps = {}
             reloadplot(tempo_results)
-        elif event.key == 'j':
-            print "Toggling jump insert mode"
+        elif event.key.lower() == 'j':
             if event.canvas.toolbar._active is not None:
                 if event.canvas.toolbar._active.lower() == 'zoom':
                     event.canvas.toolbar.zoom()
+            options.jump_mode = not options.jump_mode
+            if options.jump_mode:
+                print "Jump edit mode on"
+            else:
+                print "Jump edit mode off"
             for k in options.jump_spans:
                 options.jump_spans[k].visible = not options.jump_spans[k].visible
-        elif event.key == 'J':
-            delete_jump_range(event.xdata)
-            reloadplot(tempo_results)
         elif event.key == 'T':
             run_tempo()
             tempo_results = TempoResults(options.freqbands)
@@ -994,6 +1008,7 @@ def parse_options():
           "permitted." % options.yaxis)
 
     options.jump_spans = {}
+    options.jump_mode = False
 
     if options.initial_parfile and len(other_args):
         options.initial_timfile = other_args[-1]
@@ -1036,6 +1051,7 @@ def main():
 
         # Now, register our event callback functions
         cid_keypress = fig.canvas.mpl_connect('key_press_event', keypress)
+        cid_keypress = fig.canvas.mpl_connect('button_press_event', click)
         cid_pick = fig.canvas.mpl_connect('pick_event', pick)
 
         # Finally, let the show begin!
