@@ -847,6 +847,7 @@ def keypress(event):
         elif event.key.lower() == 'z':
             # Turn on zoom mode
             print "Toggling zoom mode..."
+            options.jump_mode = False
             for k in options.jump_spans:
                 options.jump_spans[k].visible = False
             event.canvas.toolbar.zoom()
