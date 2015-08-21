@@ -836,8 +836,9 @@ def keypress(event):
             reloadplot(tempo_results)
         elif event.key == 'j':
             print "Toggling jump insert mode"
-            if event.canvas.toolbar._active.lower() == 'zoom':
-                event.canvas.toolbar.zoom()
+            if event.canvas.toolbar._active is not None:
+                if event.canvas.toolbar._active.lower() == 'zoom':
+                    event.canvas.toolbar.zoom()
             for k in options.jump_spans:
                 options.jump_spans[k].visible = not options.jump_spans[k].visible
         elif event.key == 'J':
@@ -951,9 +952,7 @@ def mjd_to_year(mjds):
 
 
 def parse_options():
-    (options, sys.argv) = parser.parse_args()
-    if sys.argv==[]:
-        sys.argv = ['tempy.py']
+    (options, other_args) = parser.parse_args()
     if not options.freqs:
         # Default frequency bands
         freqbands = [['0', '400'],
@@ -995,6 +994,13 @@ def parse_options():
           "permitted." % options.yaxis)
 
     options.jump_spans = {}
+
+    if options.initial_parfile and len(other_args):
+        options.initial_timfile = other_args[-1]
+        options.run_initial_fit = True
+    else:
+        options.run_initial_fit = False
+    
     return options
 
 
@@ -1003,6 +1009,16 @@ def main():
     global tempo_history
     global options
     options = parse_options()
+
+    if options.run_initial_fit:
+        print "Running TEMPO with parfile %s and tim file %s" % \
+          (options.initial_parfile, options.initial_timfile)
+        subprocess.call(["tempo", "-f", options.initial_parfile,
+                        options.initial_timfile])
+    else:
+        print "Initial par/tim files not provided, attempting to load " \
+              "existing TEMPO results."
+
     tempo_results = TempoResults(options.freqbands)
     tempo_history = TempoHistory(tempo_results)
  
@@ -1045,10 +1061,16 @@ class EmptyPlotValueError(ValueError):
 
 if __name__=='__main__':
     parser = optparse.OptionParser(prog="tempy.py")
-    parser.add_option('-f', '--freq', dest='freqs', action='append', \
+    parser.add_option('-f', dest='initial_parfile', type='string', \
+                        help="A TEMPO parfile for initial fit. If provided," \
+                             " a tim file must appear as the final command"\
+                             " line argument. If not provided, the last run of"\
+                             " TEMPO in the current directory is used.",\
+                        default="")
+    parser.add_option('--freq', dest='freqs', action='append', \
                         help="Band of frequencies, in MHz, to be plotted " \
                              "(format xxx:yyy). Each band will have a " \
-                             " different colour. Multiple -f/--freq options " \
+                             " different colour. Multiple --freq options " \
                              " are allowed. (Default: Plot all frequencies " \
                              "in single colour.)", \
                         default=[])
