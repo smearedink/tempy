@@ -15,6 +15,7 @@ from shutil import copyfile
 import matplotlib
 import matplotlib.pyplot as plt
 from matplotlib.transforms import offset_copy
+from matplotlib.widgets import SpanSelector
 import numpy as np
 
 import pyslalib.slalib as slalib
@@ -104,6 +105,24 @@ class TempoResults:
         tempolisfile.close()
 
         self.phase_wraps = {}
+        self.jump_ranges = []
+
+        tim = toa.TOAset.from_princeton_file(intimfn)
+        tim_ordered_index = np.argsort(tim.TOAs)
+
+        # if there are phase wraps in the tim file, we want to include those
+        # in the intial plot
+        for tim_wrap_index in tim.phase_wraps:
+            wrap_index = tim_ordered_index[tim_wrap_index]
+            self.phase_wraps[wrap_index] = \
+              tim.phase_wraps[tim_wrap_index]
+        
+        # if there are jumps in the tim file, we want to include those in the
+        # initial plot
+        for tim_jstart,tim_jend in tim.jump_ranges:
+            jstart = tim_ordered_index[tim_jstart]
+            jend = tim_ordered_index[tim_jend]
+            self.jump_ranges.append((jstart, jend))
 
         # Record filename
         self.inparfn = inparfn
@@ -315,6 +334,8 @@ def plot_data(tempo_results, xkey, ykey, postfit=True, prefit=False,
     numsubplots = len(to_plot_postfit)
     global axes
     axes = []
+    global ax_types
+    ax_types = []
     handles = []
     labels = []
 
@@ -325,6 +346,11 @@ def plot_data(tempo_results, xkey, ykey, postfit=True, prefit=False,
             axes.append(plt.subplot(numsubplots, 1, subplot))
         else:
             axes.append(plt.subplot(numsubplots, 1, subplot, sharex=axes[0]))
+
+        if usepostfit:
+            ax_types.append('post')
+        else:
+            ax_types.append('pre')
 
         # set tick formatter to not use scientific notation or an offset
         tick_formatter = matplotlib.ticker.ScalarFormatter(useOffset=False)
@@ -368,14 +394,58 @@ def plot_data(tempo_results, xkey, ykey, postfit=True, prefit=False,
                 wrap_x = wrap_index - 0.5
             else:
                 break
-            wrap_color = ['pink', 'red'] # [prefit, postfit]
+            wrap_color = {'pre':'pink', 'post':'red'}
             plt.axvline(wrap_x, ls=':', label='_nolegend_',
-                        color=wrap_color[usepostfit], lw=1.5)
+                        color=wrap_color[ax_types[-1]], lw=1.5)
             plt.text(wrap_x, axes[-1].get_ylim()[1],
                      "%+d" % tempo_results.phase_wraps[wrap_index],
                      transform=text_offset, size='x-small',
-                     color=wrap_color[usepostfit])
-        
+                     color=wrap_color[ax_types[-1]])
+
+        ymin, ymax = axes[-1].get_ylim()
+
+        # Plot jump ranges
+        for jstart,jend in tempo_results.jump_ranges:
+            jstart_mjd = tempo_results.ordered_MJDs[jstart]
+            jend_mjd = tempo_results.ordered_MJDs[jend]
+            extend_frac = 0.1
+            if jstart > 0:
+                jstart_mjd_before = tempo_results.ordered_MJDs[jstart-1]
+            else:
+                jstart_mjd_before = jstart_mjd
+            if jend < len(tempo_results.ordered_MJDs)-1:
+                jend_mjd_after = tempo_results.ordered_MJDs[jend+1]
+            else:
+                jend_mjd_after = jend_mjd
+            dist_before = jstart_mjd - \
+              ((1-extend_frac)*jstart_mjd + extend_frac*jstart_mjd_before)
+            dist_after = (extend_frac*jend_mjd_after + \
+              (1-extend_frac)*jend_mjd) - jend_mjd
+            dist_mjd = min(dist_before, dist_after)
+            if dist_mjd < 1e-8:
+                dist_mjd = max(dist_before, dist_after)
+            jstart_mjd -= dist_mjd
+            jend_mjd += dist_mjd
+            if xkey == 'mjd':
+                jstart_x = jstart_mjd
+                jend_x = jend_mjd
+            elif xkey == 'year':
+                jstart_x = mjd_to_year(jstart_mjd)[0]
+                jend_x = mjd_to_year(jend_mjd)[0]
+            elif xkey == 'numtoa':
+                jstart_x = jstart + extend_frac
+                jend_x = jend - extend_frac
+            else:
+                break
+            plt.fill_betweenx([ymin, ymax], jstart_x, jend_x,
+                              edgecolor="orange", facecolor='yellow', lw=0.5, alpha=0.3)
+            axes[-1].set_ylim((ymin, ymax))
+
+        # set up span selector for setting new jump ranges
+       
+        options.jump_spans[ax_types[-1]] = SpanSelector(axes[-1], select_jump_range, 'horizontal', useblit=True, rectprops=dict(alpha=0.5, facecolor='orange'))
+        options.jump_spans[ax_types[-1]].visible = options.jump_mode
+
         if subplot > 1:
             axes[0].set_xlim((xmin, xmax))
         
@@ -447,16 +517,18 @@ def savefigure(savefn='./resid2.tmp.ps'):
     print "Saving plot to %s" % savefn
     plt.savefig(savefn, orientation='landscape', papertype='letter')
 
-def reloadplot(tempo_results=None):
+def reloadplot(with_tempo_results=None):
+    global tempo_results
     global options
-    #global phase_wraps
     # Reload residuals and replot
     print "Plotting..."
     fig = plt.gcf()
     fig.set_visible(False)
     plt.clf() # clear figure
-    if tempo_results is None:
+    if with_tempo_results is None:
         tempo_results = TempoResults(options.freqbands)
+    else:
+        tempo_results = with_tempo_results
     try:
         plot_data(tempo_results, options.xaxis, options.yaxis,
                   postfit=options.postfit, prefit=options.prefit,
@@ -475,27 +547,37 @@ def reloadplot(tempo_results=None):
 
 
 def redrawplot():
-    plt.draw()         #plt.show is keeping the plot open on nimrod, as opposed to plt.draw
+    #plt.show is keeping the plot open on nimrod, as opposed to plt.draw
+    plt.draw()
     #plt.show()
 
 def quit():
     print "Quitting..."
     sys.exit(0)
 
+def click(event):
+    # Remove jump range if in jump edit mode
+    global options
+    if event.button == 3:
+        if options.jump_mode:
+            delete_jump_range(event.xdata)
+            reloadplot(tempo_results)
+
 
 def pick(event):
     global tempo_results
-    index = event.ind
-    axes = event.mouseevent.inaxes
-    if axes:
-        title = axes.get_title()
-        postfit = ("Postfit" in title)
-    if len(index) == 1:
-        freq_label = event.artist.get_label()
-        info = tempo_results.get_info(freq_label, index, postfit)
-        print_text(info)
-    else:
-        print "Multiple TOAs selected. Zoom in and try again."
+    if event.mouseevent.button == 1:
+        index = event.ind
+        axes = event.mouseevent.inaxes
+        if axes:
+            title = axes.get_title()
+            postfit = ("Postfit" in title)
+        if len(index) == 1:
+            freq_label = event.artist.get_label()
+            info = tempo_results.get_info(freq_label, index, postfit)
+            print_text(info)
+        else:
+            print "Multiple TOAs selected. Zoom in and try again."
 
 
 def print_text(lines, *args, **kwargs):
@@ -517,6 +599,8 @@ def print_help():
     print "\tz - Toggle Zoom-mode on/off"
     print "\tm - Toggle marking of periastron passages on/off"
     print "\tL - Toggle legend on/off"
+    print "\tj - Toggle jump edit mode (left click to start/end jump range,\n"\
+          "\t    right click to remove jump range)"
     print "\t+ - Insert positive phase wrap at cursor position"
     print "\t- - Insert negative phase wrap at cursor position"
     print "\t[Backspace] - Remove all phase wraps"
@@ -530,7 +614,8 @@ def print_help():
     print "\ty - Sey y-axis limits (terminal input required)"
     print "\tr - Reload residuals"
     print "\tt - Cycle through y-axis types ('phase', 'usec', 'sec')"
-    print "\t[Space] - Cycle through x-axis types ('mjd', 'year', 'numtoa', 'orbitphase')"
+    print "\t[Space] - Cycle through x-axis types ('mjd', 'year', 'numtoa',\n"\
+          "\t          'orbitphase')"
     print "\t[Left mouse] - Select TOA (display info in terminal)"
     print "\t             - Select zoom region (if Zoom-mode is on)"
     print "-"*80
@@ -539,6 +624,7 @@ def run_tempo():
     global tempo_results
     global tempo_history
     par_fname = tempo_results.outpar.FILE
+    # in case we've gone back to a previous Tempo iteration, save the parfile
     tempo_history.save_outpar(par_fname)
     if par_fname.split('.')[-1] == 'tempy':
         new_par = par_fname
@@ -547,10 +633,15 @@ def run_tempo():
     copyfile(tempo_results.outpar.FILE, new_par)
     tim = toa.TOAset.from_princeton_file(tempo_results.intimfn)
     tim.phase_wraps = {}
+    tim.jump_ranges = []
     tim_ordered_index = np.argsort(tim.TOAs)
     for wrap_index in tempo_results.phase_wraps:
         tim_wrap_index = np.where(tim_ordered_index == wrap_index)[0][0]
         tim.phase_wraps[tim_wrap_index] = tempo_results.phase_wraps[wrap_index]
+    for jstart,jend in tempo_results.jump_ranges:
+        tim_jstart = np.where(tim_ordered_index == jstart)[0][0]
+        tim_jend = np.where(tim_ordered_index == jend)[0][0]
+        tim.jump_ranges.append((tim_jstart,tim_jend))
     if tempo_results.intimfn.split('.')[-1] == 'tempy':
         new_timfn = tempo_results.intimfn
     else:
@@ -659,6 +750,57 @@ def increment_phase_wrap(xdata, phase_offset):
     else:
         tempo_results.phase_wraps[where_wrap] = phase_offset
 
+def is_in_jump_range(index):
+    """
+    Returns which jump range contains given TOA index, or None if
+    this index is not in a jump range
+    """
+    global tempo_results
+    for ii,(jstart,jend) in enumerate(tempo_results.jump_ranges):
+        if index >= jstart and index <= jend:
+            return ii
+    return None
+
+def select_jump_range(xdata_min, xdata_max):
+    global tempo_results
+    global options
+    if options.xaxis == 'mjd':
+        xmin, xmax = np.searchsorted(tempo_results.ordered_MJDs,
+                                     [xdata_min, xdata_max])
+    elif options.xaxis == 'year':
+        all_years = mjd_to_year(tempo_results.ordered_MJDs)
+        xmin, xmax = np.searchsorted(all_years, [xdata_min, xdata_max])
+    elif options.xaxis == 'numtoa':
+        xmin = int(np.ceil(xdata_min))
+        xmax = int(np.floor(xdata_max))
+    if xmin >= xmax:
+        return
+    xmin_in_jump_range = is_in_jump_range(xmin)
+    xmax_in_jump_range = is_in_jump_range(xmax-1)
+    if xmin_in_jump_range is None and xmax_in_jump_range is None:
+        tempo_results.jump_ranges.append((xmin,xmax-1))
+        reloadplot(tempo_results)
+    else:
+        print "Region overlaps with existing jump range"
+    #for k in options.jump_spans:
+    #    options.jump_spans[k].visible = False
+
+def delete_jump_range(xdata):
+    global tempo_results
+    global options
+    if options.xaxis == 'mjd':
+        where_clicked = np.searchsorted(tempo_results.ordered_MJDs, xdata)
+    elif options.xaxis == 'year':
+        all_years = mjd_to_year(tempo_results.ordered_MJDs)
+        where_clicked = np.searchsorted(all_years, xdata)
+    elif options.xaxis == 'numtoa':
+        where_clicked = xdata
+    else:
+        return
+    to_delete = is_in_jump_range(where_clicked)
+    if to_delete is not None:
+        del tempo_results.jump_ranges[to_delete]
+
 def keypress(event):
     global tempo_results
     global tempo_history
@@ -683,6 +825,8 @@ def keypress(event):
         elif event.key.lower() == 'z':
             # Turn on zoom mode
             print "Toggling zoom mode..."
+            for k in options.jump_spans:
+                options.jump_spans[k].visible = False
             event.canvas.toolbar.zoom()
         elif event.key.lower() == 'm':
             # Toggle peri markings
@@ -703,6 +847,17 @@ def keypress(event):
         elif event.key == "backspace":
             tempo_results.phase_wraps = {}
             reloadplot(tempo_results)
+        elif event.key.lower() == 'j':
+            if event.canvas.toolbar._active is not None:
+                if event.canvas.toolbar._active.lower() == 'zoom':
+                    event.canvas.toolbar.zoom()
+            options.jump_mode = not options.jump_mode
+            if options.jump_mode:
+                print "Jump edit mode on"
+            else:
+                print "Jump edit mode off"
+            for k in options.jump_spans:
+                options.jump_spans[k].visible = not options.jump_spans[k].visible
         elif event.key == 'T':
             run_tempo()
             tempo_results = TempoResults(options.freqbands)
@@ -811,9 +966,7 @@ def mjd_to_year(mjds):
 
 
 def parse_options():
-    (options, sys.argv) = parser.parse_args()
-    if sys.argv==[]:
-        sys.argv = ['pyplotres.py']
+    (options, other_args) = parser.parse_args()
     if not options.freqs:
         # Default frequency bands
         freqbands = [['0', '400'],
@@ -853,6 +1006,16 @@ def parse_options():
     if options.yaxis.lower() not in yvals:
         raise BadOptionValueError("Option to -y/--y-axis (%s) is not "\
           "permitted." % options.yaxis)
+
+    options.jump_spans = {}
+    options.jump_mode = False
+
+    if options.initial_parfile and len(other_args):
+        options.initial_timfile = other_args[-1]
+        options.run_initial_fit = True
+    else:
+        options.run_initial_fit = False
+    
     return options
 
 
@@ -861,15 +1024,19 @@ def main():
     global tempo_history
     global options
     options = parse_options()
+
+    if options.run_initial_fit:
+        print "Running TEMPO with parfile %s and tim file %s" % \
+          (options.initial_parfile, options.initial_timfile)
+        subprocess.call(["tempo", "-f", options.initial_parfile,
+                        options.initial_timfile])
+    else:
+        print "Initial par/tim files not provided, attempting to load " \
+              "existing TEMPO results."
+
     tempo_results = TempoResults(options.freqbands)
     tempo_history = TempoHistory(tempo_results)
-
-    tim = toa.TOAset.from_princeton_file(tempo_results.intimfn)
-    tim_ordered_index = np.argsort(tim.TOAs)
-    for tim_wrap_index in tim.phase_wraps:
-        wrap_index = tim_ordered_index[tim_wrap_index]
-        tempo_results.phase_wraps[wrap_index] = tim.phase_wraps[tim_wrap_index]
-    
+ 
     create_plot()
     reloadplot()
 
@@ -884,6 +1051,7 @@ def main():
 
         # Now, register our event callback functions
         cid_keypress = fig.canvas.mpl_connect('key_press_event', keypress)
+        cid_keypress = fig.canvas.mpl_connect('button_press_event', click)
         cid_pick = fig.canvas.mpl_connect('pick_event', pick)
 
         # Finally, let the show begin!
@@ -908,12 +1076,17 @@ class EmptyPlotValueError(ValueError):
 
 
 if __name__=='__main__':
-    parser = optparse.OptionParser(prog="pyplotres.py", \
-                        version="v1.2 Patrick Lazarus (Mar. 29, 2010)")
-    parser.add_option('-f', '--freq', dest='freqs', action='append', \
+    parser = optparse.OptionParser(prog="tempy.py")
+    parser.add_option('-f', dest='initial_parfile', type='string', \
+                        help="A TEMPO parfile for initial fit. If provided," \
+                             " a tim file must appear as the final command"\
+                             " line argument. If not provided, the last run of"\
+                             " TEMPO in the current directory is used.",\
+                        default="")
+    parser.add_option('--freq', dest='freqs', action='append', \
                         help="Band of frequencies, in MHz, to be plotted " \
                              "(format xxx:yyy). Each band will have a " \
-                             " different colour. Multiple -f/--freq options " \
+                             " different colour. Multiple --freq options " \
                              " are allowed. (Default: Plot all frequencies " \
                              "in single colour.)", \
                         default=[])
