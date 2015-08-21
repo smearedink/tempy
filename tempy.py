@@ -15,6 +15,7 @@ from shutil import copyfile
 import matplotlib
 import matplotlib.pyplot as plt
 from matplotlib.transforms import offset_copy
+from matplotlib.widgets import SpanSelector
 import numpy as np
 
 import pyslalib.slalib as slalib
@@ -333,6 +334,8 @@ def plot_data(tempo_results, xkey, ykey, postfit=True, prefit=False,
     numsubplots = len(to_plot_postfit)
     global axes
     axes = []
+    global ax_types
+    ax_types = []
     handles = []
     labels = []
 
@@ -343,6 +346,11 @@ def plot_data(tempo_results, xkey, ykey, postfit=True, prefit=False,
             axes.append(plt.subplot(numsubplots, 1, subplot))
         else:
             axes.append(plt.subplot(numsubplots, 1, subplot, sharex=axes[0]))
+
+        if usepostfit:
+            ax_types.append('post')
+        else:
+            ax_types.append('pre')
 
         # set tick formatter to not use scientific notation or an offset
         tick_formatter = matplotlib.ticker.ScalarFormatter(useOffset=False)
@@ -386,13 +394,13 @@ def plot_data(tempo_results, xkey, ykey, postfit=True, prefit=False,
                 wrap_x = wrap_index - 0.5
             else:
                 break
-            wrap_color = ['pink', 'red'] # [prefit, postfit]
+            wrap_color = {'pre':'pink', 'post':'red'}
             plt.axvline(wrap_x, ls=':', label='_nolegend_',
-                        color=wrap_color[usepostfit], lw=1.5)
+                        color=wrap_color[ax_types[-1]], lw=1.5)
             plt.text(wrap_x, axes[-1].get_ylim()[1],
                      "%+d" % tempo_results.phase_wraps[wrap_index],
                      transform=text_offset, size='x-small',
-                     color=wrap_color[usepostfit])
+                     color=wrap_color[ax_types[-1]])
 
         ymin, ymax = axes[-1].get_ylim()
 
@@ -429,11 +437,14 @@ def plot_data(tempo_results, xkey, ykey, postfit=True, prefit=False,
                 jend_x = jend - extend_frac
             else:
                 break
-            jstart_color = ['pink', 'red'] # [prefit, postfit]
-            jend_color = ['cyan', 'green'] # [prefit, postfit]
             plt.fill_betweenx([ymin, ymax], jstart_x, jend_x,
                               facecolor='yellow', lw=0, alpha=0.3)
             axes[-1].set_ylim((ymin, ymax))
+
+        # set up span selector for setting new jump ranges
+       
+        options.jump_spans[ax_types[-1]] = SpanSelector(axes[-1], select_jump_range, 'horizontal', useblit=True, rectprops=dict(alpha=0.5, facecolor='orange'))
+        options.jump_spans[ax_types[-1]].visible = False
 
         if subplot > 1:
             axes[0].set_xlim((xmin, xmax))
@@ -578,6 +589,8 @@ def print_help():
     print "\tz - Toggle Zoom-mode on/off"
     print "\tm - Toggle marking of periastron passages on/off"
     print "\tL - Toggle legend on/off"
+    print "\tj - Toggle jump insert mode (click to start/end jump range)"
+    print "\tJ - Remove jump range at cursor position"
     print "\t+ - Insert positive phase wrap at cursor position"
     print "\t- - Insert negative phase wrap at cursor position"
     print "\t[Backspace] - Remove all phase wraps"
@@ -609,10 +622,15 @@ def run_tempo():
     copyfile(tempo_results.outpar.FILE, new_par)
     tim = toa.TOAset.from_princeton_file(tempo_results.intimfn)
     tim.phase_wraps = {}
+    tim.jump_ranges = []
     tim_ordered_index = np.argsort(tim.TOAs)
     for wrap_index in tempo_results.phase_wraps:
         tim_wrap_index = np.where(tim_ordered_index == wrap_index)[0][0]
         tim.phase_wraps[tim_wrap_index] = tempo_results.phase_wraps[wrap_index]
+    for jstart,jend in tempo_results.jump_ranges:
+        tim_jstart = np.where(tim_ordered_index == jstart)[0][0]
+        tim_jend = np.where(tim_ordered_index == jend)[0][0]
+        tim.jump_ranges.append((tim_jstart,tim_jend))
     if tempo_results.intimfn.split('.')[-1] == 'tempy':
         new_timfn = tempo_results.intimfn
     else:
@@ -721,6 +739,39 @@ def increment_phase_wrap(xdata, phase_offset):
     else:
         tempo_results.phase_wraps[where_wrap] = phase_offset
 
+def is_in_jump_range(index):
+    """
+    Returns which jump range contains given TOA index, or None if
+    this index is not in a jump range
+    """
+    global tempo_results
+    for ii,(jstart,jend) in enumerate(tempo_results.jump_ranges):
+        if index >= jstart and index <= jend:
+            return ii
+    return None
+
+def select_jump_range(xdata_min, xdata_max):
+    global tempo_results
+    global options
+    if options.xaxis == 'mjd':
+        xmin, xmax = np.searchsorted(tempo_results.ordered_MJDs,
+                                     [xdata_min, xdata_max])
+    elif options.xaxis == 'year':
+        all_years = mjd_to_year(tempo_results.ordered_MJDs)
+        xmin, xmax = np.searchsorted(all_years, [xdata_min, xdata_max])
+    elif options.xaxis == 'numtoa':
+        xmin = int(np.ceil(xdata_min))
+        xmax = int(np.floor(xdata_max))
+    xmin_in_jump_range = is_in_jump_range(xmin)
+    xmax_in_jump_range = is_in_jump_range(xmax-1)
+    if xmin_in_jump_range is None and xmax_in_jump_range is None:
+        tempo_results.jump_ranges.append((xmin,xmax-1))
+        reloadplot(tempo_results)
+    else:
+        print "Region overlaps with existing jump range"
+    for k in options.jump_spans:
+        options.jump_spans[k].visible = False
+
 def delete_jump_range(xdata):
     global tempo_results
     global options
@@ -733,11 +784,9 @@ def delete_jump_range(xdata):
         where_clicked = xdata
     else:
         return
-    for ii,(jstart,jend) in enumerate(tempo_results.jump_ranges):
-        if where_clicked > jstart and where_clicked < jend:
-            del tempo_results.jump_ranges[ii]
-            break
-
+    to_delete = is_in_jump_range(where_clicked)
+    if to_delete is not None:
+        del tempo_results.jump_ranges[to_delete]
 
 def keypress(event):
     global tempo_results
@@ -763,6 +812,8 @@ def keypress(event):
         elif event.key.lower() == 'z':
             # Turn on zoom mode
             print "Toggling zoom mode..."
+            for k in options.jump_spans:
+                options.jump_spans[k].visible = False
             event.canvas.toolbar.zoom()
         elif event.key.lower() == 'm':
             # Toggle peri markings
@@ -783,6 +834,12 @@ def keypress(event):
         elif event.key == "backspace":
             tempo_results.phase_wraps = {}
             reloadplot(tempo_results)
+        elif event.key == 'j':
+            print "Toggling jump insert mode"
+            if event.canvas.toolbar._active.lower() == 'zoom':
+                event.canvas.toolbar.zoom()
+            for k in options.jump_spans:
+                options.jump_spans[k].visible = not options.jump_spans[k].visible
         elif event.key == 'J':
             delete_jump_range(event.xdata)
             reloadplot(tempo_results)
@@ -936,6 +993,8 @@ def parse_options():
     if options.yaxis.lower() not in yvals:
         raise BadOptionValueError("Option to -y/--y-axis (%s) is not "\
           "permitted." % options.yaxis)
+
+    options.jump_spans = {}
     return options
 
 
