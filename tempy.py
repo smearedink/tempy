@@ -607,6 +607,7 @@ def print_help():
     print "\tT - Run Tempo with current postfit parameters and phase wraps"
     print "\tb - Return to previous Tempo solution"
     print "\tn - Go to next Tempo solution"
+    print "\td - Dump current Tempo solution to new par/tim files"
     print "\to - Go to original view"
     print "\t< - Go to previous view"
     print "\t> - Go to next view"
@@ -761,6 +762,19 @@ def is_in_jump_range(index):
             return ii
     return None
 
+def jump_ranges_between(index1, index2):
+    """
+    Returns all jump ranges that exist between index1 and index2 (even if they
+    only overlap partly)
+    """
+    global tempo_results
+    which_jump_ranges = []
+    for ii,(jstart,jend) in enumerate(tempo_results.jump_ranges):
+        if (jend >= index1 and jend <= index2) or \
+          (jstart <= index2 and jstart >= index1):
+            which_jump_ranges.append(ii)
+    return which_jump_ranges
+
 def select_jump_range(xdata_min, xdata_max):
     global tempo_results
     global options
@@ -775,13 +789,21 @@ def select_jump_range(xdata_min, xdata_max):
         xmax = int(np.floor(xdata_max))
     if xmin >= xmax:
         return
+    xmax -= 1
+
     xmin_in_jump_range = is_in_jump_range(xmin)
     xmax_in_jump_range = is_in_jump_range(xmax-1)
-    if xmin_in_jump_range is None and xmax_in_jump_range is None:
-        tempo_results.jump_ranges.append((xmin,xmax-1))
-        reloadplot(tempo_results)
-    else:
-        print "Region overlaps with existing jump range"
+    if xmin_in_jump_range is not None and xmax_in_jump_range is not None:
+        if xmin_in_jump_range == xmax_in_jump_range:
+            del tempo_results.jump_ranges[xmin_in_jump_range]
+    which_jump_ranges = jump_ranges_between(xmin, xmax)
+    for ii in reversed(sorted(which_jump_ranges)):
+        del tempo_results.jump_ranges[ii]
+    #if xmin_in_jump_range is None and xmax_in_jump_range is None:
+    tempo_results.jump_ranges.append((xmin,xmax))
+    reloadplot(tempo_results)
+    #else:
+    #    print "Region overlaps with existing jump range"
     #for k in options.jump_spans:
     #    options.jump_spans[k].visible = False
 
@@ -878,6 +900,14 @@ def keypress(event):
             tempo_history.seek_first_solution()
             tempo_results = tempo_history.get_current_tempo_results()
             reloadplot(tempo_results)
+        elif event.key.lower() == 'd':
+            basename = "%s.tpy" % tempo_results.outpar.PSR
+            par_fname = raw_input("Output parfile [%s.par]: " % basename)
+            if not par_fname: par_fname = "%s.par" % basename
+            tim_fname = raw_input("Output timfile [%s.tim]: " % basename)
+            if not tim_fname: tim_fname = "%s.tim" % basename
+            tempo_history.save_outpar(par_fname)
+            tempo_history.save_timfile(tim_fname)
         elif event.key.lower() == 'o':
             # Restore plot to original view
             print "Restoring plot..."
