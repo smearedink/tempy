@@ -108,7 +108,7 @@ class TempoResults:
         self.phase_wraps = {}
         self.jump_ranges = []
 
-        tim = toa.TOAset.from_princeton_file(intimfn)
+        tim = toa.TOAset.from_tim_file(intimfn)
         tim_ordered_index = np.argsort(tim.TOAs)
 
         # if there are phase wraps in the tim file, we want to include those
@@ -484,8 +484,7 @@ def plot_data(tempo_results, xkey, ykey, postfit=True, prefit=False,
             tempo_history.get_current_parfile()[b].fit=0
         if not any(b in s for s in toa.no_fit_pars):
             nms.append(b)
-
-        fitmes.append(tempo_history.get_current_parfile()[b].fit)
+            fitmes.append(tempo_history.get_current_parfile()[b].fit)
     rax = plt.axes([0.85, 0.1, 0.1, 0.8])
     options.fitcheck = CheckButtons(rax, nms, fitmes)
     options.fitcheck.on_clicked(update_fit_flag)
@@ -636,7 +635,7 @@ def run_tempo():
     else:
         new_par = par_fname + '.tempy'
     copyfile(tempo_results.outpar.FILE, new_par)
-    tim = toa.TOAset.from_princeton_file(tempo_results.intimfn)
+    tim = toa.TOAset.from_tim_file(tempo_results.intimfn)
     tim.phase_wraps = {}
     tim.jump_ranges = []
     toa.write_parfile(tempo_history.get_current_parfile(), new_par)
@@ -653,7 +652,7 @@ def run_tempo():
         new_timfn = tempo_results.intimfn
     else:
         new_timfn = tempo_results.intimfn + ".tempy"
-    tim.to_princeton_file(new_timfn)
+    tim.to_tim_file(new_timfn)
     subprocess.call(["tempo", "-f", new_par, new_timfn])
 
 class TempoHistory:
@@ -714,7 +713,7 @@ class TempoHistory:
         #    outpar = f.readlines()
         #    self.outpars.append(outpar)
         self.outpars.append(toa.read_parfile(tempo_results.outpar.FILE))
-        timfile = toa.TOAset.from_princeton_file(tempo_results.intimfn)
+        timfile = toa.TOAset.from_tim_file(tempo_results.intimfn)
         self.timfiles.append(timfile)
         self.tempo_results.append(tempo_results)
         if increment_current:
@@ -738,7 +737,7 @@ class TempoHistory:
         print "Wrote output parfile %s" % fname
 
     def save_timfile(self, fname):
-        self.timfiles[self.current_index].to_princeton_file(fname)
+        self.timfiles[self.current_index].to_tim_file(fname)
         print "Wrote tim file %s" % fname
 
 def increment_phase_wrap(xdata, phase_offset):
