@@ -486,6 +486,7 @@ def plot_data(tempo_results, xkey, ykey, postfit=True, prefit=False,
             nms.append(b)
             fitmes.append(tempo_history.get_current_parfile()[b].fit)
     rax = plt.axes([0.85, 0.1, 0.1, 0.8])
+    rax.set_frame_on(False)
     options.fitcheck = CheckButtons(rax, nms, fitmes)
     options.fitcheck.on_clicked(update_fit_flag)
     redrawplot()
@@ -502,7 +503,7 @@ def create_plot():
     fig = plt.figure(figsize=(11,8.5))
     # Force user to interact via custom inputs
     fig.canvas.toolbar.pack_forget()
-
+    fig.set_facecolor("white")
 
 def get_freq_label(lo, hi):
     """Return frequency label given a lo and hi
