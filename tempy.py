@@ -317,6 +317,12 @@ def plot_data(tempo_results, xkey, ykey, postfit=True, prefit=False,
     numsubplots = len(to_plot_postfit)
     global axes
     axes = []
+    global ax_types
+    ax_types = []
+    global ax_phase_wraps
+    ax_phase_wraps = []
+    global ax_jump_ranges
+    ax_jump_ranges = []
     handles = []
     labels = []
 
@@ -327,6 +333,14 @@ def plot_data(tempo_results, xkey, ykey, postfit=True, prefit=False,
             axes.append(plt.subplot(numsubplots, 1, subplot))
         else:
             axes.append(plt.subplot(numsubplots, 1, subplot, sharex=axes[0]))
+
+        if usepostfit:
+            ax_types.append('post')
+        else:
+            ax_types.append('pre')
+
+        ax_phase_wraps.append([])
+        ax_jump_ranges.append([])
 
         # set tick formatter to not use scientific notation or an offset
         tick_formatter = matplotlib.ticker.ScalarFormatter(useOffset=False)
@@ -370,13 +384,20 @@ def plot_data(tempo_results, xkey, ykey, postfit=True, prefit=False,
                 wrap_x = wrap_index - 0.5
             else:
                 break
-            wrap_color = ['pink', 'red'] # [prefit, postfit]
-            plt.axvline(wrap_x, ls=':', label='_nolegend_',
-                        color=wrap_color[usepostfit], lw=1.5)
-            plt.text(wrap_x, axes[-1].get_ylim()[1],
-                     "%+d" % tempo_results.phase_wraps[wrap_index],
-                     transform=text_offset, size='x-small',
-                     color=wrap_color[usepostfit])
+            wrap_color = {'pre':'pink', 'post':'red'}
+            wrp = plt.axvline(wrap_x, ls=':', label='_nolegend_',
+                              color=wrap_color[ax_types[-1]], lw=1.5)
+            wrp_txt = plt.text(wrap_x, axes[-1].get_ylim()[1],
+                               "%+d" % tempo_results.phase_wraps[wrap_index],
+                               transform=text_offset, size='x-small',
+                               color=wrap_color[ax_types[-1]])
+            ax_phase_wraps[-1].append([wrp, wrp_txt])
+
+        #ymin, ymax = axes[-1].get_ylim()
+
+        # set up span selector for setting new jump ranges
+        options.jump_spans[ax_types[-1]] = SpanSelector(axes[-1], select_jump_range, 'horizontal', useblit=True, rectprops=dict(alpha=0.5, facecolor='orange'))
+        options.jump_spans[ax_types[-1]].visible = options.jump_mode
 
         if subplot > 1:
             axes[0].set_xlim((xmin, xmax))
@@ -413,6 +434,12 @@ def plot_data(tempo_results, xkey, ykey, postfit=True, prefit=False,
             plt.title("Prefit Residuals (Number of TOAs: %d)" % TOAcount)
         subplot += 1
 
+    # Plot jump ranges
+    for jstart,jend in tempo_results.jump_ranges:
+        plot_jump_range((jstart,jend))
+#        axes[-1].set_ylim((ymin, ymax))
+
+
     if numsubplots > 1:
         # Increase spacing between subplots.
         plt.subplots_adjust(hspace=0.25)
@@ -422,8 +449,9 @@ def plot_data(tempo_results, xkey, ykey, postfit=True, prefit=False,
         fntext = "Solution %d of %d, TOA file: %s, Parameter file: %s" % \
           (tempo_history.current_index+1, tempo_history.get_nsolutions(),
            tempo_results.intimfn, tempo_results.inparfn)
-        figure_text = plt.figtext(0.01, 0.01, fntext, verticalalignment='bottom', \
-                            horizontalalignment='left')
+        figure_text = plt.figtext(0.01, 0.01, fntext,
+                                  verticalalignment='bottom',
+                                  horizontalalignment='left')
 
 
 
@@ -459,6 +487,8 @@ def update_fit_flag(label):
 def create_plot():
     # Set up the plot
     fig = plt.figure(figsize=(11,8.5))
+    # Force user to interact via custom inputs
+    fig.canvas.toolbar.pack_forget()
 
 
 def get_freq_label(lo, hi):
@@ -510,20 +540,48 @@ def quit():
     print "Quitting..."
     sys.exit(0)
 
+def click(event):
+    # Remove jump range if in jump edit mode
+    global options
+    global ax_jump_ranges
+    for ax in ax_jump_ranges:
+        if event.artist in ax:
+            print "COOL!"
+        else:
+            print "NOT COOL!"
+    if event.button == 3:
+        if options.jump_mode:
+            delete_jump_range(event.xdata)
+            #reloadplot(tempo_results)
+            redrawplot()
+
 
 def pick(event):
     global tempo_results
-    index = event.ind
-    axes = event.mouseevent.inaxes
-    if axes:
-        title = axes.get_title()
-        postfit = ("Postfit" in title)
-    if len(index) == 1:
-        freq_label = event.artist.get_label()
-        info = tempo_results.get_info(freq_label, index, postfit)
-        print_text(info)
-    else:
-        print "Multiple TOAs selected. Zoom in and try again."
+    global options
+    global ax_jump_ranges
+    if event.mouseevent.button == 1:
+        index = event.ind
+        axes = event.mouseevent.inaxes
+        if axes:
+            title = axes.get_title()
+            postfit = ("Postfit" in title)
+        if len(index) == 1:
+            freq_label = event.artist.get_label()
+            info = tempo_results.get_info(freq_label, index, postfit)
+            print_text(info)
+        else:
+            print "Multiple TOAs selected. Zoom in and try again."
+    elif event.mouseevent.button == 3:
+        if options.jump_mode:
+            for ax in ax_jump_ranges:
+                if event.artist in ax:
+                    xmin = event.artist.get_paths()[0].get_extents().xmin
+                    xmax = event.artist.get_paths()[0].get_extents().xmax
+                    delete_jump_range(0.5*(xmin+xmax))
+                    redrawplot()
+        else:
+            print "Must be in jump edit mode ('j') to delete jump ranges."
 
 
 def print_text(lines, *args, **kwargs):
@@ -551,7 +609,8 @@ def print_help():
     print "\tT - Run Tempo with current postfit parameters and phase wraps"
     print "\tb - Return to previous Tempo solution"
     print "\tn - Go to next Tempo solution"
-    print "\to - Go to original view"
+    print "\td - Dump current Tempo solution to new par/tim files"
+    print "\tu - Go to original view (unzoom)"
     print "\t< - Go to previous view"
     print "\t> - Go to next view"
     print "\tx - Set x-axis limits (terminal input required)"
@@ -690,6 +749,133 @@ def increment_phase_wrap(xdata, phase_offset):
     else:
         tempo_results.phase_wraps[where_wrap] = phase_offset
 
+def is_in_jump_range(index):
+    """
+    Returns which jump range contains given TOA index, or None if
+    this index is not in a jump range
+    """
+    global tempo_results
+    for ii,(jstart,jend) in enumerate(tempo_results.jump_ranges):
+        if index >= jstart and index <= jend:
+            return ii
+    return None
+
+def jump_ranges_between(index1, index2):
+    """
+    Returns all jump ranges that exist between index1 and index2 (even if they
+    only overlap partly)
+    """
+    global tempo_results
+    which_jump_ranges = []
+    for ii,(jstart,jend) in enumerate(tempo_results.jump_ranges):
+        if (jend >= index1 and jend <= index2) or \
+          (jstart <= index2 and jstart >= index1):
+            which_jump_ranges.append(ii)
+    return which_jump_ranges
+
+def select_jump_range(xdata_min, xdata_max):
+    global tempo_results
+    global options
+    global ax_types
+    if options.xaxis == 'mjd':
+        xmin, xmax = np.searchsorted(tempo_results.ordered_MJDs,
+                                     [xdata_min, xdata_max])
+    elif options.xaxis == 'year':
+        all_years = mjd_to_year(tempo_results.ordered_MJDs)
+        xmin, xmax = np.searchsorted(all_years, [xdata_min, xdata_max])
+    elif options.xaxis == 'numtoa':
+        xmin = int(np.ceil(xdata_min))
+        xmax = int(np.floor(xdata_max))
+    if xmin >= xmax:
+        return
+    xmax -= 1
+
+    xmin_in_jump_range = is_in_jump_range(xmin)
+    xmax_in_jump_range = is_in_jump_range(xmax-1)
+    if xmin_in_jump_range is not None and xmax_in_jump_range is not None:
+        if xmin_in_jump_range == xmax_in_jump_range:
+            #del tempo_results.jump_ranges[xmin_in_jump_range]
+            delete_jump_range_index(xmin_in_jump_range)
+    which_jump_ranges = jump_ranges_between(xmin, xmax)
+    for ii in reversed(sorted(which_jump_ranges)):
+        #del tempo_results.jump_ranges[ii]
+        delete_jump_range_index(ii)
+    tempo_results.jump_ranges.append((xmin,xmax))
+    plot_jump_range((xmin,xmax))
+    redrawplot()
+
+def plot_jump_range(jump_range):
+    global tempo_results
+    global options
+    global ax_jump_ranges
+    global axes
+    #ax = axes[ax_types.index(ax_type)]
+    jstart,jend = jump_range
+    jstart_mjd = tempo_results.ordered_MJDs[jstart]
+    jend_mjd = tempo_results.ordered_MJDs[jend]
+    extend_frac = 0.1
+    if jstart > 0:
+        jstart_mjd_before = tempo_results.ordered_MJDs[jstart-1]
+    else:
+        jstart_mjd_before = jstart_mjd
+    if jend < len(tempo_results.ordered_MJDs)-1:
+        jend_mjd_after = tempo_results.ordered_MJDs[jend+1]
+    else:
+        jend_mjd_after = jend_mjd
+    dist_before = jstart_mjd - \
+      ((1-extend_frac)*jstart_mjd + extend_frac*jstart_mjd_before)
+    dist_after = (extend_frac*jend_mjd_after + \
+      (1-extend_frac)*jend_mjd) - jend_mjd
+    dist_mjd = min(dist_before, dist_after)
+    if dist_mjd < 1e-8:
+        dist_mjd = max(dist_before, dist_after)
+    jstart_mjd -= dist_mjd
+    jend_mjd += dist_mjd
+    if options.xaxis == 'mjd':
+        jstart_x = jstart_mjd
+        jend_x = jend_mjd
+    elif options.xaxis == 'year':
+        jstart_x = mjd_to_year(jstart_mjd)[0]
+        jend_x = mjd_to_year(jend_mjd)[0]
+    elif options.xaxis == 'numtoa':
+        jstart_x = jstart + extend_frac
+        jend_x = jend - extend_frac
+    else:
+        return
+    for ii,ax in enumerate(axes):
+        ymin,ymax = ax.get_ylim()
+        jmp = ax.fill_betweenx((ymin*100, ymax*100), jstart_x, jend_x,
+                               edgecolor="orange", facecolor='yellow',
+                               lw=0.5, alpha=0.3, picker=True)
+        ax_jump_ranges[ii].append(jmp)
+        ax.set_ylim(ymin,ymax)
+    #redrawplot()
+
+
+def delete_jump_range_index(index):
+    global tempo_results
+    global ax_jump_ranges
+    del tempo_results.jump_ranges[index]
+    for ax in ax_jump_ranges:
+        ax.pop(index).remove()
+
+def delete_jump_range(xdata):
+    global tempo_results
+    global options
+    global ax_jump_ranges
+    if options.xaxis == 'mjd':
+        where_clicked = np.searchsorted(tempo_results.ordered_MJDs, xdata)
+    elif options.xaxis == 'year':
+        all_years = mjd_to_year(tempo_results.ordered_MJDs)
+        where_clicked = np.searchsorted(all_years, xdata)
+    elif options.xaxis == 'numtoa':
+        where_clicked = xdata
+    else:
+        return
+    to_delete = is_in_jump_range(where_clicked)
+    if to_delete is not None:
+        delete_jump_range_index(to_delete)
+
 def keypress(event):
     global tempo_results
     global tempo_history
@@ -714,6 +900,9 @@ def keypress(event):
         elif event.key.lower() == 'z':
             # Turn on zoom mode
             print "Toggling zoom mode..."
+            options.jump_mode = False
+            for k in options.jump_spans:
+                options.jump_spans[k].visible = False
             event.canvas.toolbar.zoom()
         elif event.key.lower() == 'm':
             # Toggle peri markings
@@ -754,9 +943,20 @@ def keypress(event):
             tempo_history.seek_first_solution()
             tempo_results = tempo_history.get_current_tempo_results()
             reloadplot(tempo_results)
-        elif event.key.lower() == 'o':
+        elif event.key.lower() == 'd':
+            basename = "%s.tpy" % tempo_results.outpar.PSR
+            par_fname = raw_input("Output parfile [%s.par]: " % basename)
+            if not par_fname: par_fname = "%s.par" % basename
+            tim_fname = raw_input("Output timfile [%s.tim]: " % basename)
+            if not tim_fname: tim_fname = "%s.tim" % basename
+            tempo_history.save_outpar(par_fname)
+            tempo_history.save_timfile(tim_fname)
+        elif event.key.lower() == 'u':
             # Restore plot to original view
             print "Restoring plot..."
+            if event.canvas.toolbar._active is not None:
+                if event.canvas.toolbar._active.lower() == 'zoom':
+                    event.canvas.toolbar.zoom()
             event.canvas.toolbar.home()
         elif event.key.lower() == ',' or event.key.lower() == '<':
             # Go back to previous plot view
@@ -914,6 +1114,7 @@ def main():
 
         # Now, register our event callback functions
         cid_keypress = fig.canvas.mpl_connect('key_press_event', keypress)
+        #cid_keypress = fig.canvas.mpl_connect('pick_event', click)
         cid_pick = fig.canvas.mpl_connect('pick_event', pick)
 
         #check buttons
