@@ -15,6 +15,7 @@ from shutil import copyfile
 import matplotlib
 import matplotlib.pyplot as plt
 from matplotlib.transforms import offset_copy
+from matplotlib.widgets import SpanSelector
 from button_test import CheckButtons
 import numpy as np
 
