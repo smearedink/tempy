@@ -81,7 +81,7 @@ class TOAset:
       jump_ranges - List of tuples of the form (start, end) where
                     'start' and 'end' are indices referring to sections of the
                     'TOAs' list bracketed by TEMPO JUMP statements
-                    (TOAS[start:(stop+1)] would be the list of those bracketed)
+                    (TOAS[start:stop] would be the list of those bracketed)
       phase_wraps - Dictionary where each key is an index in the 'TOAs' list
                     before which a TEMPO PHASE statement occurs, and the value
                     is the argument to the PHASE statement
@@ -137,7 +137,7 @@ class TOAset:
                         if jump:
                             jump_ranges.append([len(TOAs), 0])
                         else:
-                            jump_ranges[-1][1] = len(TOAs)-1
+                            jump_ranges[-1][1] = len(TOAs)
                             jump_ranges[-1] = tuple(jump_ranges[-1])
                     elif line.strip()[:4] == "MODE":
                         mode = int(line.split()[1])
@@ -151,13 +151,13 @@ class TOAset:
         return cls(TOAs, jump_ranges, phase_wraps, mode, track)
 
     def get_TOAs_from_jump_range(self, index):
-        return self.TOAs[self.jump_ranges[index][0]:(self.jump_ranges[index][1]+1)]
+        return self.TOAs[self.jump_ranges[index][0]:self.jump_ranges[index][1]]
 
     def jump_statement_before(self, index):
         return index in [r[0] for r in self.jump_ranges]
-    
+
     def jump_statement_after(self, index):
-        return index in [r[1] for r in self.jump_ranges]
+        return index+1 in [r[1] for r in self.jump_ranges]
 
     def get_nTOAs(self):
         return len(self.TOAs)
@@ -196,3 +196,54 @@ class TOAset:
             with open(fname, 'w') as f:
                 for line in lines:
                     f.write(line + "\n")
+
+
+string_pars = ['PSR','PSRJ','EPHEM','CLK','BINARY','JUMP',\
+               'UNITS','TZRSITE','TIMEEPH','T2CMETHOD',\
+               'CORRECT_TROPOSPHERE','PLANET_SHAPIRO','DILATEFREQ',\
+               'RAJ', 'DECJ', 'NITS']
+
+from collections import OrderedDict
+
+class Par:
+
+    def __init__(self,name,value,error=None,fit=None):
+        self.name = name
+        self.value = value
+        self.error = error
+        self.fit = fit
+    def __repr__(self):
+        return "Name: " + self.name + " Value: " + str(self.value) + \
+               " Error: " + str(self.error) + " Fit: " + str(self.fit)
+
+def read_parfile(parfn):
+    pars = OrderedDict()
+    parf = open(parfn,'r')
+    for line in parf.readlines():
+        split = line.split()
+        if split[0] == 'C': #its a comment
+            continue
+        if len(split) == 1: #has no value
+            continue
+
+        value = split[1] if split[0] in string_pars else float(split[1].replace('D', 'E'))
+
+        if len(split) == 2:
+            pars[split[0]] = Par(split[0],value)
+        elif len(split) == 3:
+            if (split[2] == '0') or (split[2] == '1'):
+                pars[split[0]] = Par(split[0],value,fit=int(split[2]))
+            else:
+                pars[split[0]] = Par(split[0],value,error=float(split[2]))
+        elif len(split) == 4:
+            pars[split[0]] = Par(split[0],value,error=float(split[3].replace('D', 'E')), \
+                                 fit=split[2])
+    return pars
+
+def write_parfile(pars, outnm):
+    with open (outnm, 'w') as f:
+        for item in pars:
+            if pars[item].fit!=None:
+                f.write( item +' '+str(pars[item].value)+'  '+ str(pars[item].fit)+ '\n')
+            else:
+                f.write( item +' '+str(pars[item].value)+'  '+ '\n')
