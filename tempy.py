@@ -491,11 +491,21 @@ def plot_data(tempo_results, xkey, ykey, postfit=True, prefit=False,
     options.fitcheck.on_clicked(update_fit_flag)
     redrawplot()
 
-def update_fit_flag(label):
-    if label:
-        if tempo_history.get_current_parfile()[label].fit==None:
-            tempo_history.get_current_parfile()[label].fit=0
-        tempo_history.get_current_parfile()[label].fit=np.str((np.int(tempo_history.get_current_parfile()[label].fit)+1)%2)
+def update_fit_flag(label, button):
+    if button=='left':
+        if label:
+            if tempo_history.get_current_parfile()[label].fit==None:
+                tempo_history.get_current_parfile()[label].fit=0
+            tempo_history.get_current_parfile()[label].fit=np.str((np.int(tempo_history.get_current_parfile()[label].fit)+1)%2)
+    if button=='right':
+        if label:
+            if tempo_history.get_current_parfile()[label].fit==None:
+                tempo_history.get_current_parfile()[label].fit=0
+
+            newvalue = raw_input("Old value of %s [%f]: " % (label,  tempo_history.get_current_parfile()[label].value))
+            #if not newvalue: newvalue = "%s.par" % basename
+            tempo_history.get_current_parfile()[label].value=newvalue
+
 
 
 def create_plot():
