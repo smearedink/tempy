@@ -11,3 +11,5 @@ Or if you've already run TEMPO in the directory and don't want to run it again, 
 * Insert/remove JUMPs graphically
 * Select parameters to include in next fit
 * Step back through fit history
+
+![tempy screenshot](http://www.hep.physics.mcgill.ca/~madsense/tempy_screenshot.png "tempy screenshot")
