@@ -387,7 +387,13 @@ def plot_data(tempo_results, xkey, ykey, postfit=True, prefit=False,
         # Plot phase wraps
         text_offset = offset_copy(axes[-1].transData, x=5, y=-10,
                                   units='dots')
-        for wrap_index in tempo_results.phase_wraps:
+        if usepostfit:
+            pw = tempo_results.phase_wraps
+        elif tempo_history.current_index > 0:
+            pw = tempo_history.tempo_results[tempo_history.current_index-1].phase_wraps
+        else:
+            pw = []
+        for wrap_index in pw:
             wrap_mjd_hi = tempo_results.ordered_MJDs[wrap_index]
             if wrap_index > 0:
                 wrap_mjd_lo = tempo_results.ordered_MJDs[wrap_index-1]
@@ -405,12 +411,10 @@ def plot_data(tempo_results, xkey, ykey, postfit=True, prefit=False,
             wrp = plt.axvline(wrap_x, ls=':', label='_nolegend_',
                               color=wrap_color[ax_types[-1]], lw=1.5)
             wrp_txt = plt.text(wrap_x, axes[-1].get_ylim()[1],
-                               "%+d" % tempo_results.phase_wraps[wrap_index],
+                               "%+d" % pw[wrap_index],
                                transform=text_offset, size='x-small',
                                color=wrap_color[ax_types[-1]])
             ax_phase_wraps[-1].append([wrp, wrp_txt])
-
-        #ymin, ymax = axes[-1].get_ylim()
 
         # set up span selector for setting new jump ranges
         options.jump_spans[ax_types[-1]] = SpanSelector(axes[-1], select_jump_range, 'horizontal', useblit=True, rectprops=dict(alpha=0.5, facecolor='orange'))
@@ -454,8 +458,6 @@ def plot_data(tempo_results, xkey, ykey, postfit=True, prefit=False,
     # Plot jump ranges
     for jstart,jend in tempo_results.jump_ranges:
         plot_jump_range((jstart,jend))
-#        axes[-1].set_ylim((ymin, ymax))
-
 
     if numsubplots > 1:
         # Increase spacing between subplots.
@@ -723,6 +725,9 @@ class TempoHistory:
     def get_current_tempo_results(self):
         return self.tempo_results[self.current_index]
 
+    def set_current_tempo_results(self, tempo_results):
+        self.tempo_results[self.current_index] = tempo_results
+
     def get_current_parfile(self):
         return self.outpars[self.current_index]
 
@@ -761,6 +766,7 @@ def increment_phase_wrap(xdata, phase_offset):
             del tempo_results.phase_wraps[where_wrap]
     else:
         tempo_results.phase_wraps[where_wrap] = phase_offset
+    tempo_history.set_current_tempo_results(tempo_results)
 
 def is_in_jump_range(index):
     """
