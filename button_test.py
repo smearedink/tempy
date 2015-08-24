@@ -4,7 +4,8 @@ from matplotlib.mlab import dist
 from matplotlib.patches import Circle, Rectangle
 from matplotlib.lines import Line2D
 from matplotlib.transforms import blended_transform_factory
-
+import pylab as plt
+import toa
 class Widget(object):
     """
     Abstract base class for GUI neutral widgets

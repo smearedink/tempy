@@ -81,7 +81,7 @@ class TOAset:
       jump_ranges - List of tuples of the form (start, end) where
                     'start' and 'end' are indices referring to sections of the
                     'TOAs' list bracketed by TEMPO JUMP statements
-                    (TOAS[start:(stop+1)] would be the list of those bracketed)
+                    (TOAS[start:stop] would be the list of those bracketed)
       phase_wraps - Dictionary where each key is an index in the 'TOAs' list
                     before which a TEMPO PHASE statement occurs, and the value
                     is the argument to the PHASE statement
@@ -137,7 +137,7 @@ class TOAset:
                         if jump:
                             jump_ranges.append([len(TOAs), 0])
                         else:
-                            jump_ranges[-1][1] = len(TOAs)-1
+                            jump_ranges[-1][1] = len(TOAs)
                             jump_ranges[-1] = tuple(jump_ranges[-1])
                     elif line.strip()[:4] == "MODE":
                         mode = int(line.split()[1])
@@ -151,13 +151,13 @@ class TOAset:
         return cls(TOAs, jump_ranges, phase_wraps, mode, track)
 
     def get_TOAs_from_jump_range(self, index):
-        return self.TOAs[self.jump_ranges[index][0]:(self.jump_ranges[index][1]+1)]
+        return self.TOAs[self.jump_ranges[index][0]:self.jump_ranges[index][1]]
 
     def jump_statement_before(self, index):
         return index in [r[0] for r in self.jump_ranges]
 
     def jump_statement_after(self, index):
-        return index in [r[1] for r in self.jump_ranges]
+        return index+1 in [r[1] for r in self.jump_ranges]
 
     def get_nTOAs(self):
         return len(self.TOAs)
@@ -246,4 +246,4 @@ def write_parfile(pars, outnm):
             if pars[item].fit!=None:
                 f.write( item +' '+str(pars[item].value)+'  '+ str(pars[item].fit)+ '\n')
             else:
-                f.write( item +' '+str(pars[item].value)+'  '+ '\n')    
+                f.write( item +' '+str(pars[item].value)+'  '+ '\n')
