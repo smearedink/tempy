@@ -3,7 +3,6 @@ from astropy import time as _atime
 class TOA:
     """
     A class representing a single pulsar time of arrival for use with TEMPO.
-
     A TOA object contains the following information:
       MJD ----- Precise time of arrival, stored in astropy format
       err ----- Error on MJD in microseconds
@@ -11,14 +10,12 @@ class TOA:
       obs ----- Observatory (TEMPO's observatory code, '@' is barycentre)
       dm_corr - Optional offset in dispersion measure for this TOA
       label --- Optional label for this TOA
-
     Initialization:
       (1) toa = TOA(MJDi, MJDf, err, freq, obs, dm_corr, label)
         MJDi and MJDf are the integer and float (following the decimal point)
         parts of the MJD, respectively
       (2) toa = TOA.from_princeton_format(toa_str)
         toa_str is a line from a Princeton-format TEMPO .tim file
-
     Methods:
       to_princeton_format()
         Return a string formatted as a line from a Princeton-format
@@ -75,7 +72,6 @@ class TOAset:
     """
     A class representing a set of TOAs used for timing in TEMPO, typically
     stored in and read from a .tim file.
-
     A TOAset object contains the following information:
       TOAs -------- List of TOAs in the order they appear in a .tim file
       jump_ranges - List of tuples of the form (start, end) where
@@ -87,12 +83,10 @@ class TOAset:
                     is the argument to the PHASE statement
       mode -------- If set, the argument to a .tim file MODE statement
       track ------- If set, the argument to a .ti file TRACK statement
-
     Initialization:
       (1) toa_set = TOAset(TOAs, jump_ranges, phase_wraps, mode, track)
       (2) toa_set = TOAset.from_princeton_file(fname)
         fname is the path to a TEMPO .tim file
-
     Methods:
       get_TOAs_from_jump_range(index)
         Returns a list of the TOAs from the jump range identified by the tuple
@@ -196,12 +190,15 @@ class TOAset:
             with open(fname, 'w') as f:
                 for line in lines:
                     f.write(line + "\n")
-
-
-string_pars = ['PSR','PSRJ','EPHEM','CLK','BINARY','JUMP',\
-               'UNITS','TZRSITE','TIMEEPH','T2CMETHOD',\
-               'CORRECT_TROPOSPHERE','PLANET_SHAPIRO','DILATEFREQ',\
+string_pars = ['PSR','PSRJ','EPHEM','CLK','BINARY','JUMP',
+               'UNITS','TZRSITE','TIMEEPH','T2CMETHOD',
+               'CORRECT_TROPOSPHERE','PLANET_SHAPIRO','DILATEFREQ',
                'RAJ', 'DECJ', 'NITS']
+
+no_fit_pars = ['PSR','PSRJ','EPHEM','CLK','BINARY','JUMP','NTOA',
+               'UNITS','TZRSITE','TIMEEPH','T2CMETHOD','TRES',
+               'CORRECT_TROPOSPHERE','PLANET_SHAPIRO','DILATEFREQ',
+               'NITS', 'TZRMJD', 'TZRFRQ', 'SOLARN0', 'START', 'FINISH']
 
 from collections import OrderedDict
 

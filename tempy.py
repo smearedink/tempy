@@ -482,7 +482,8 @@ def plot_data(tempo_results, xkey, ykey, postfit=True, prefit=False,
     for b in tempo_history.get_current_parfile():
         if tempo_history.get_current_parfile()[b].fit==None:
             tempo_history.get_current_parfile()[b].fit=0
-        nms.append(b)
+        if not any(b in s for s in toa.no_fit_pars):
+            nms.append(b)
 
         fitmes.append(tempo_history.get_current_parfile()[b].fit)
     rax = plt.axes([0.85, 0.1, 0.1, 0.8])
