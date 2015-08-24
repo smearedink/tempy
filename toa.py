@@ -24,13 +24,16 @@ class TOA:
         Return a string formatted as a line from a Princeton-format
         TEMPO .tim file
     """
-    def __init__(self, MJDi, MJDf, err, freq, obs, dm_corr=0, label=''):
+    def __init__(self, MJDi, MJDf, err, freq, obs, dm_corr=0, label='', phase_offset=0.000000):
         self.MJD = _atime.Time(MJDi, MJDf, format='mjd')
         self.err = float(err)
         self.freq = float(freq)
         self.obs = obs
-        self.dm_corr = float(dm_corr)
+        self.dm_corr = dm_corr
+        if self.dm_corr is not None:
+            self.dm_corr = float(self.dm_corr)
         self.label = label
+        self.phase_offset = phase_offset
 
     def __repr__(self):
         return "<TOA: %d.%s>" % (int(self.MJD.mjd),
@@ -59,16 +62,59 @@ class TOA:
             return cls(MJDi, MJDf, err, freq, obs, 0, label)
         else:
             return cls(MJDi, MJDf, err, freq, obs, float(dm_corr_str), label)
-
+    
     def to_princeton_format(self):
         toa = "%5d"%int(self.MJD.mjd) + ("%.13f" % (self.MJD.jd2 % 1))[1:]
-        if self.dm_corr != 0:
-            return self.obs+" %13s %8.3f %s %8.3f              %9.4f" % \
-                   (self.label, self.freq, toa, self.err, self.dm_corr)
+        print self.dm_corr
+        if self.dm_corr is not None:
+            if self.dm_corr != 0:
+                return self.obs+" %13s %8.3f %s %8.3f              %9.4f" % \
+                       (self.label, self.freq, toa, self.err, self.dm_corr)
+            else:
+                return self.obs+" %13s %8.3f %s %8.3f" % \
+                       (self.label, self.freq, toa, self.err)
         else:
             return self.obs+" %13s %8.3f %s %8.3f" % \
                    (self.label, self.freq, toa, self.err)
 
+    @classmethod
+    def from_parkes_format(cls, toa_str):
+        obs = toa_str[79:80]
+        label = toa_str[2:16].strip()
+        freq = float(toa_str[25:34])
+        mjd_str = toa_str[34:55].split('.')
+        MJDi = int(mjd_str[0])
+        MJDf = float('.' + mjd_str[1])
+        phase_offset = float(toa_str[55:63])
+        err = float(toa_str[63:71])
+        dm_corr=None
+        return cls(MJDi, MJDf, err, freq, obs, dm_corr, label, phase_offset)
+
+    def to_parkes_format(self):
+        toa = "%5d"%int(self.MJD.mjd) + ("%.13f" % (self.MJD.jd2 % 1))[1:]
+        return "%12s              %8.3f  %s%7.6f  %8.3f      " % \
+                   (self.label, self.freq, toa, self.phase_offset, self.err)+self.obs
+
+    @classmethod
+    def from_ITOA_format(cls, toa_str):
+        obs = toa_str[57:59]
+        #label = toa_str[2:16].strip()
+        freq = float(toa_str[34:45])
+        mjd_str = toa_str[9:28].split('.')
+        MJDi = int(mjd_str[0])
+        MJDf = float('.' + mjd_str[1])
+        err = float(toa_str[28:34])
+        dm_corr_str = toa_str[45:55]
+        phase_offset = None
+        if not dm_corr_str.strip():
+            return cls(MJDi, MJDf, err, freq, obs, 0.0000, phase_offset)
+        else:
+            return cls(MJDi, MJDf, err, freq, obs, float(dm_corr_str), phase_offset)
+
+    def to_ITOA_format(self):
+        toa = "%5d"%int(self.MJD.mjd) + ("%.13f" % (self.MJD.jd2 % 1))[1:]
+        return " %8s %s %8.3f %8.3f %9.4f   " % \
+               (self.label, toa, self.err, self.freq, self.dm_corr) + self.obs
 
 
 class TOAset:
@@ -122,13 +168,14 @@ class TOAset:
           (self.get_nTOAs(), self.get_span())
 
     @classmethod
-    def from_princeton_file(cls, fname):
+    def from_tim_file(cls, fname):
         TOAs = []
         jump_ranges = []
         jump = False
         phase_wraps = {}
         mode = None
         track = None
+        fformat=''
         with open(fname, 'r') as f:
             for line in f.readlines():
                 if line[0].upper() != 'C':
@@ -147,7 +194,25 @@ class TOAset:
                         phase_wrap = int(line.strip()[5:])
                         phase_wraps[len(TOAs)] = phase_wrap
                     elif len(line.strip()) >= 50:
-                        TOAs.append(TOA.from_princeton_format(line.strip()))
+                        try:
+                            TOAs.append(TOA.from_princeton_format(line.strip()))
+                            fformat = 'princeton'
+                        except:
+                            pass
+                        try: 
+                            TOAs.append(TOA.from_parkes_format(line))
+                            fformat = 'parkes'
+                        except:
+                            pass
+                        try: 
+                            TOAs.append(TOA.from_ITOA_format(line.strip()))
+                            fformat = 'ITOA'
+                        except:
+                            pass
+                        if fformat == '':
+                            print "Unsupported file format. The file format must be princeton, \
+                                   parkes or ITOA."    
+            print fformat
         return cls(TOAs, jump_ranges, phase_wraps, mode, track)
 
     def get_TOAs_from_jump_range(self, index):
@@ -168,7 +233,7 @@ class TOAset:
         last_mjd = max(mjds)
         return (last_mjd - first_mjd).jd
 
-    def to_princeton_file(self, fname=None):
+    def to_tim_file(self, fname=None, fformat=None):
         """
         If filename not provided, formatted TOAs are printed to screen
         """
@@ -186,7 +251,14 @@ class TOAset:
                 lines.append("PHASE %s" % ph_arg)
             if self.jump_statement_before(ii):
                 lines.append("JUMP")
-            lines.append(self.TOAs[ii].to_princeton_format())
+            #if fformat=='princeton':
+            #    lines.append(self.TOAs[ii].to_princeton_format())
+            if fformat=='parkes':
+                lines.append(self.TOAs[ii].to_parkes_format())
+            elif fformat=='ITOA':
+                lines.append(self.TOAs[ii].to_ITOA_format())
+            else: # by default write tim file in princeton format
+                lines.append(self.TOAs[ii].to_princeton_format())
             if self.jump_statement_after(ii):
                 lines.append("JUMP")
         if fname is None:
@@ -196,3 +268,4 @@ class TOAset:
             with open(fname, 'w') as f:
                 for line in lines:
                     f.write(line + "\n")
+    
