@@ -484,8 +484,7 @@ def plot_data(tempo_results, xkey, ykey, postfit=True, prefit=False,
             tempo_history.get_current_parfile()[b].fit=0
         if not any(b in s for s in toa.no_fit_pars):
             nms.append(b)
-
-        fitmes.append(tempo_history.get_current_parfile()[b].fit)
+            fitmes.append(tempo_history.get_current_parfile()[b].fit)
     rax = plt.axes([0.85, 0.1, 0.1, 0.8])
     options.fitcheck = CheckButtons(rax, nms, fitmes)
     options.fitcheck.on_clicked(update_fit_flag)
@@ -714,7 +713,7 @@ class TempoHistory:
         #    outpar = f.readlines()
         #    self.outpars.append(outpar)
         self.outpars.append(toa.read_parfile(tempo_results.outpar.FILE))
-        timfile = toa.TOAset.from_princeton_file(tempo_results.intimfn)
+        timfile = toa.TOAset.from_tim_file(tempo_results.intimfn)
         self.timfiles.append(timfile)
         self.tempo_results.append(tempo_results)
         if increment_current:
