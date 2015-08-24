@@ -534,22 +534,6 @@ def quit():
     print "Quitting..."
     sys.exit(0)
 
-def click(event):
-    # Remove jump range if in jump edit mode
-    global options
-    global ax_jump_ranges
-    for ax in ax_jump_ranges:
-        if event.artist in ax:
-            print "COOL!"
-        else:
-            print "NOT COOL!"
-    if event.button == 3:
-        if options.jump_mode:
-            delete_jump_range(event.xdata)
-            #reloadplot(tempo_results)
-            redrawplot()
-
-
 def pick(event):
     global tempo_results
     global options
