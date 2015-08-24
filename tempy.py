@@ -26,7 +26,7 @@ import residuals
 from scipy.cluster.vq import kmeans2
 
 import toa
-from button_test import CheckButtons
+from check_buttons import CheckButtons
 
 # Available x-axis types
 xvals = ['mjd', 'year', 'numtoa', 'orbitphase']
