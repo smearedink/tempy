@@ -474,27 +474,27 @@ def plot_data(tempo_results, xkey, ykey, postfit=True, prefit=False,
     leg = plt.figlegend(handles, labels, 'upper right')
     leg.set_visible(show_legend)
     leg.legendPatch.set_alpha(0.5)
-    options.parfn=tempo_results.outparfn
     plt.subplots_adjust(right=0.8)
-    options.par_stored=toa.read_parfile(tempo_results.outpar.FILE)
+
+
     nms=[]
     fitmes=[]
-    for b in options.par_stored:
-        if options.par_stored[b].fit!=None:
-            options.par_stored[b].fit=0
+    for b in tempo_history.get_current_parfile():
+        if tempo_history.get_current_parfile()[b].fit==None:
+            tempo_history.get_current_parfile()[b].fit=0
         nms.append(b)
 
-        fitmes.append(options.par_stored[b].fit)
+        fitmes.append(tempo_history.get_current_parfile()[b].fit)
     rax = plt.axes([0.85, 0.1, 0.1, 0.8])
     options.fitcheck = CheckButtons(rax, nms, fitmes)
     options.fitcheck.on_clicked(update_fit_flag)
-    plt.draw()
+    redrawplot()
 
 def update_fit_flag(label):
     if label:
-        if options.par_stored[label].fit==None:
-            options.par_stored[label].fit=0
-        options.par_stored[label].fit=np.str((np.int(options.par_stored[label].fit)+1)%2)
+        if tempo_history.get_current_parfile()[label].fit==None:
+            tempo_history.get_current_parfile()[label].fit=0
+        tempo_history.get_current_parfile()[label].fit=np.str((np.int(tempo_history.get_current_parfile()[label].fit)+1)%2)
 
 
 def create_plot():
@@ -637,8 +637,8 @@ def run_tempo():
     copyfile(tempo_results.outpar.FILE, new_par)
     tim = toa.TOAset.from_princeton_file(tempo_results.intimfn)
     tim.phase_wraps = {}
-
-    toa.write_parfile(options.par_stored, new_par)
+    tim.jump_ranges = []
+    toa.write_parfile(tempo_history.get_current_parfile(), new_par)
 
     tim_ordered_index = np.argsort(tim.TOAs)
     for wrap_index in tempo_results.phase_wraps:
@@ -709,9 +709,10 @@ class TempoHistory:
         with open(tempo_results.inparfn, 'r') as f:
             inpar = f.readlines()
             self.inpars.append(inpar)
-        with open(tempo_results.outparfn, 'r') as f:
-            outpar = f.readlines()
-            self.outpars.append(outpar)
+        #with open(tempo_results.outparfn, 'r') as f:
+        #    outpar = f.readlines()
+        #    self.outpars.append(outpar)
+        self.outpars.append(toa.read_parfile(tempo_results.outpar.FILE))
         timfile = toa.TOAset.from_princeton_file(tempo_results.intimfn)
         self.timfiles.append(timfile)
         self.tempo_results.append(tempo_results)
@@ -721,14 +722,18 @@ class TempoHistory:
     def get_current_tempo_results(self):
         return self.tempo_results[self.current_index]
 
+    def get_current_parfile(self):
+        return self.outpars[self.current_index]
+
     def save_inpar(self, fname):
         with open(fname, 'w') as f:
             f.writelines(self.inpars[self.current_index])
         print "Wrote input parfile %s" % fname
 
     def save_outpar(self, fname):
-        with open(fname, 'w') as f:
-            f.writelines(self.outpars[self.current_index])
+        #with open(fname, 'w') as f:
+        #    f.writelines(self.outpars[self.current_index])
+        toa.write_parfile(self.outpars[self.current_index], fname)
         print "Wrote output parfile %s" % fname
 
     def save_timfile(self, fname):
