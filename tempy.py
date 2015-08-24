@@ -26,6 +26,7 @@ import residuals
 from scipy.cluster.vq import kmeans2
 
 import toa
+from check_buttons import CheckButtons
 
 # Available x-axis types
 xvals = ['mjd', 'year', 'numtoa', 'orbitphase']
@@ -39,13 +40,13 @@ colors = {1: ['#000000'], # black
           3: ['#ff0000', '#008000', '#0000ff'], # red green blue
           4: ['#ff0000', '#FFA500', '#008000', '#0000ff'], # red orange green blue
           # red orange green blue violet
-          5: ['#ff0000', '#FFA500', '#008000', '#0000ff', '#EE82EE'], 
+          5: ['#ff0000', '#FFA500', '#008000', '#0000ff', '#EE82EE'],
           # red orange green blue indigo violet
-          6: ['#ff0000', '#FFA500', '#008000', '#0000ff', '#4B0082', '#EE82EE'], 
+          6: ['#ff0000', '#FFA500', '#008000', '#0000ff', '#4B0082', '#EE82EE'],
           # red orange yellow green blue indigo violet
-          7: ['#ff0000', '#FFA500', '#FFFF00', '#008000', '#0000ff', '#4B0082', '#EE82EE'], 
+          7: ['#ff0000', '#FFA500', '#FFFF00', '#008000', '#0000ff', '#4B0082', '#EE82EE'],
           # red orange yellow green blue indigo violet black
-          8: ['#ff0000', '#FFA500', '#FFFF00', '#008000', '#0000ff', '#4B0082', '#EE82EE', '#000000']} 
+          8: ['#ff0000', '#FFA500', '#FFFF00', '#008000', '#0000ff', '#4B0082', '#EE82EE', '#000000']}
 
 
 def find_freq_clusters(freqs):
@@ -116,7 +117,7 @@ class TempoResults:
             wrap_index = tim_ordered_index[tim_wrap_index]
             self.phase_wraps[wrap_index] = \
               tim.phase_wraps[tim_wrap_index]
-        
+
         # if there are jumps in the tim file, we want to include those in the
         # initial plot
         for tim_jstart,tim_jend in tim.jump_ranges:
@@ -162,7 +163,6 @@ class TempoResults:
     def get_info(self, freq_label, index, postfit=True):
         """Given a freq_label and index return formatted text
             describing the TOA residual.
-
             Assume postfit period for calculating residual in phase,
             unless otherwise indicated.
         """
@@ -301,8 +301,8 @@ class Resids:
                 ylabel = "Residuals (Seconds)"
             else:
                 raise ValueError("Unknown yaxis type (%s)." % yopt)
-                 
-        if postfit: 
+
+        if postfit:
             for wrap_index in phase_wraps:
                 if yopt=='phase':
                     ydata[self.TOA_index >= wrap_index] += \
@@ -355,7 +355,7 @@ def plot_data(tempo_results, xkey, ykey, postfit=True, prefit=False,
             ax_types.append('post')
         else:
             ax_types.append('pre')
-        
+
         ax_phase_wraps.append([])
         ax_jump_ranges.append([])
 
@@ -365,11 +365,11 @@ def plot_data(tempo_results, xkey, ykey, postfit=True, prefit=False,
         axes[-1].xaxis.set_major_formatter(tick_formatter)
 
         xmin, xmax = axes[0].get_xlim()
-        
+
         for ii,(lo,hi) in enumerate(tempo_results.freqbands):
             freq_label = get_freq_label(lo, hi)
             resids = tempo_results.residuals[freq_label]
-            
+
             xlabel, xdata = resids.get_xdata(xkey)
             ylabel, ydata, yerr = resids.get_ydata(ykey, usepostfit,
                                                    tempo_results.phase_wraps)
@@ -418,14 +418,14 @@ def plot_data(tempo_results, xkey, ykey, postfit=True, prefit=False,
 
         if subplot > 1:
             axes[0].set_xlim((xmin, xmax))
-        
+
         # Finish off the plot
         plt.axhline(0, ls='--', label="_nolegend_", c='k', lw=0.5)
         axes[-1].ticklabel_format(style='plain', axis='x')
 
         if mark_peri and hasattr(tempo_results.outpar, 'BINARY'):
             # Be sure to check if pulsar is in a binary
-            # Cannot mark passage of periastron if not a binary 
+            # Cannot mark passage of periastron if not a binary
             if usepostfit:
                 binpsr = binary_psr.binary_psr(tempo_results.outpar.FILE)
             else:
@@ -470,10 +470,32 @@ def plot_data(tempo_results, xkey, ykey, postfit=True, prefit=False,
                                   verticalalignment='bottom',
                                   horizontalalignment='left')
 
-    # Make the legend and set its visibility state
+ # Make the legend and set its visibility state
     leg = plt.figlegend(handles, labels, 'upper right')
     leg.set_visible(show_legend)
     leg.legendPatch.set_alpha(0.5)
+    plt.subplots_adjust(right=0.8)
+
+
+    nms=[]
+    fitmes=[]
+    for b in tempo_history.get_current_parfile():
+        if tempo_history.get_current_parfile()[b].fit==None:
+            tempo_history.get_current_parfile()[b].fit=0
+        if not any(b in s for s in toa.no_fit_pars):
+            nms.append(b)
+            fitmes.append(tempo_history.get_current_parfile()[b].fit)
+    rax = plt.axes([0.85, 0.1, 0.1, 0.8])
+    options.fitcheck = CheckButtons(rax, nms, fitmes)
+    options.fitcheck.on_clicked(update_fit_flag)
+    redrawplot()
+
+def update_fit_flag(label):
+    if label:
+        if tempo_history.get_current_parfile()[label].fit==None:
+            tempo_history.get_current_parfile()[label].fit=0
+        tempo_history.get_current_parfile()[label].fit=np.str((np.int(tempo_history.get_current_parfile()[label].fit)+1)%2)
+
 
 def create_plot():
     # Set up the plot
@@ -607,7 +629,6 @@ def run_tempo():
     global tempo_results
     global tempo_history
     par_fname = tempo_results.outpar.FILE
-    # in case we've gone back to a previous Tempo iteration, save the parfile
     tempo_history.save_outpar(par_fname)
     if par_fname.split('.')[-1] == 'tempy':
         new_par = par_fname
@@ -617,6 +638,8 @@ def run_tempo():
     tim = toa.TOAset.from_tim_file(tempo_results.intimfn)
     tim.phase_wraps = {}
     tim.jump_ranges = []
+    toa.write_parfile(tempo_history.get_current_parfile(), new_par)
+
     tim_ordered_index = np.argsort(tim.TOAs)
     for wrap_index in tempo_results.phase_wraps:
         tim_wrap_index = np.where(tim_ordered_index == wrap_index)[0][0]
@@ -645,7 +668,7 @@ class TempoHistory:
             self.append(tempo_results)
 
     def get_nsolutions(self):
-        return len(self.tempo_results)   
+        return len(self.tempo_results)
 
     def seek_next_solution(self):
         new_index = self.current_index + 1
@@ -665,7 +688,7 @@ class TempoHistory:
                                                         self.get_nsolutions())
         else:
             print "Already at solution 1 of %d" % (self.get_nsolutions())
-    
+
     def seek_first_solution(self):
         if self.get_nsolutions():
             self.current_index = 0
@@ -686,9 +709,10 @@ class TempoHistory:
         with open(tempo_results.inparfn, 'r') as f:
             inpar = f.readlines()
             self.inpars.append(inpar)
-        with open(tempo_results.outparfn, 'r') as f:
-            outpar = f.readlines()
-            self.outpars.append(outpar)
+        #with open(tempo_results.outparfn, 'r') as f:
+        #    outpar = f.readlines()
+        #    self.outpars.append(outpar)
+        self.outpars.append(toa.read_parfile(tempo_results.outpar.FILE))
         timfile = toa.TOAset.from_tim_file(tempo_results.intimfn)
         self.timfiles.append(timfile)
         self.tempo_results.append(tempo_results)
@@ -698,14 +722,18 @@ class TempoHistory:
     def get_current_tempo_results(self):
         return self.tempo_results[self.current_index]
 
+    def get_current_parfile(self):
+        return self.outpars[self.current_index]
+
     def save_inpar(self, fname):
         with open(fname, 'w') as f:
             f.writelines(self.inpars[self.current_index])
         print "Wrote input parfile %s" % fname
 
     def save_outpar(self, fname):
-        with open(fname, 'w') as f:
-            f.writelines(self.outpars[self.current_index])
+        #with open(fname, 'w') as f:
+        #    f.writelines(self.outpars[self.current_index])
+        toa.write_parfile(self.outpars[self.current_index], fname)
         print "Wrote output parfile %s" % fname
 
     def save_timfile(self, fname):
@@ -1086,7 +1114,7 @@ def parse_options():
         options.run_initial_fit = True
     else:
         options.run_initial_fit = False
-    
+
     return options
 
 
@@ -1107,7 +1135,7 @@ def main():
 
     tempo_results = TempoResults(options.freqbands)
     tempo_history = TempoHistory(tempo_results)
- 
+
     create_plot()
     reloadplot()
 

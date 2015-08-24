@@ -3,7 +3,6 @@ from astropy import time as _atime
 class TOA:
     """
     A class representing a single pulsar time of arrival for use with TEMPO.
-
     A TOA object contains the following information:
       MJD ---------- Precise time of arrival, stored in astropy format
       err ---------- Error on MJD in microseconds
@@ -63,7 +62,7 @@ class TOA:
             return cls(MJDi, MJDf, err, freq, obs, 0, label)
         else:
             return cls(MJDi, MJDf, err, freq, obs, float(dm_corr_str), label)
-    
+
     def to_princeton_format(self):
         toa = "%5d"%int(self.MJD.mjd) + ("%.13f" % (self.MJD.jd2 % 1))[1:]
         if self.dm_corr is not None:
@@ -126,7 +125,6 @@ class TOAset:
     """
     A class representing a set of TOAs used for timing in TEMPO, typically
     stored in and read from a .tim file.
-
     A TOAset object contains the following information:
       TOAs -------- List of TOAs in the order they appear in a .tim file
       jump_ranges - List of tuples of the form (start, end) where
@@ -138,12 +136,10 @@ class TOAset:
                     is the argument to the PHASE statement
       mode -------- If set, the argument to a .tim file MODE statement
       track ------- If set, the argument to a .ti file TRACK statement
-
     Initialization:
       (1) toa_set = TOAset(TOAs, jump_ranges, phase_wraps, mode, track)
       (2) toa_set = TOAset.from_tim_file(fname)
         fname is the path to a TEMPO .tim file
-
     Methods:
       get_TOAs_from_jump_range(index)
         Returns a list of the TOAs from the jump range identified by the tuple
@@ -205,11 +201,11 @@ class TOAset:
                             TOAs.append(TOA.from_princeton_format(line))
                             default_format = 'princeton'
                         except:
-                            try: 
+                            try:
                                 TOAs.append(TOA.from_parkes_format(line))
                                 default_format = 'parkes'
                             except:
-                                try: 
+                                try:
                                     TOAs.append(TOA.from_ITOA_format(line))
                                     default_format = 'ITOA'
                                 except:
@@ -221,7 +217,7 @@ class TOAset:
 
     def jump_statement_before(self, index):
         return index in [r[0] for r in self.jump_ranges]
-    
+
     def jump_statement_after(self, index):
         return index in [r[1] for r in self.jump_ranges]
 
@@ -274,4 +270,57 @@ class TOAset:
             with open(fname, 'w') as f:
                 for line in lines:
                     f.write(line + "\n")
-    
+string_pars = ['PSR','PSRJ','EPHEM','CLK','BINARY','JUMP',
+               'UNITS','TZRSITE','TIMEEPH','T2CMETHOD',
+               'CORRECT_TROPOSPHERE','PLANET_SHAPIRO','DILATEFREQ',
+               'RAJ', 'DECJ', 'NITS']
+
+no_fit_pars = ['PSR','PSRJ','EPHEM','CLK','BINARY','JUMP','NTOA',
+               'UNITS','TZRSITE','TIMEEPH','T2CMETHOD','TRES',
+               'CORRECT_TROPOSPHERE','PLANET_SHAPIRO','DILATEFREQ',
+               'NITS', 'TZRMJD', 'TZRFRQ', 'SOLARN0', 'START', 'FINISH']
+
+from collections import OrderedDict
+
+class Par:
+
+    def __init__(self,name,value,error=None,fit=None):
+        self.name = name
+        self.value = value
+        self.error = error
+        self.fit = fit
+    def __repr__(self):
+        return "Name: " + self.name + " Value: " + str(self.value) + \
+               " Error: " + str(self.error) + " Fit: " + str(self.fit)
+
+def read_parfile(parfn):
+    pars = OrderedDict()
+    parf = open(parfn,'r')
+    for line in parf.readlines():
+        split = line.split()
+        if split[0] == 'C': #its a comment
+            continue
+        if len(split) == 1: #has no value
+            continue
+
+        value = split[1] if split[0] in string_pars else float(split[1].replace('D', 'E'))
+
+        if len(split) == 2:
+            pars[split[0]] = Par(split[0],value)
+        elif len(split) == 3:
+            if (split[2] == '0') or (split[2] == '1'):
+                pars[split[0]] = Par(split[0],value,fit=int(split[2]))
+            else:
+                pars[split[0]] = Par(split[0],value,error=float(split[2]))
+        elif len(split) == 4:
+            pars[split[0]] = Par(split[0],value,error=float(split[3].replace('D', 'E')), \
+                                 fit=split[2])
+    return pars
+
+def write_parfile(pars, outnm):
+    with open (outnm, 'w') as f:
+        for item in pars:
+            if pars[item].fit!=None:
+                f.write( item +' '+str(pars[item].value)+'  '+ str(pars[item].fit)+ '\n')
+            else:
+                f.write( item +' '+str(pars[item].value)+'  '+ '\n')
