@@ -108,7 +108,7 @@ class TempoResults:
         self.phase_wraps = {}
         self.jump_ranges = []
 
-        tim = toa.TOAset.from_princeton_file(intimfn)
+        tim = toa.TOAset.from_tim_file(intimfn)
         tim_ordered_index = np.argsort(tim.TOAs)
 
         # if there are phase wraps in the tim file, we want to include those
@@ -636,7 +636,7 @@ def run_tempo():
     else:
         new_par = par_fname + '.tempy'
     copyfile(tempo_results.outpar.FILE, new_par)
-    tim = toa.TOAset.from_princeton_file(tempo_results.intimfn)
+    tim = toa.TOAset.from_tim_file(tempo_results.intimfn)
     tim.phase_wraps = {}
     tim.jump_ranges = []
     toa.write_parfile(tempo_history.get_current_parfile(), new_par)
@@ -653,7 +653,7 @@ def run_tempo():
         new_timfn = tempo_results.intimfn
     else:
         new_timfn = tempo_results.intimfn + ".tempy"
-    tim.to_princeton_file(new_timfn)
+    tim.to_tim_file(new_timfn)
     subprocess.call(["tempo", "-f", new_par, new_timfn])
 
 class TempoHistory:
@@ -738,7 +738,7 @@ class TempoHistory:
         print "Wrote output parfile %s" % fname
 
     def save_timfile(self, fname):
-        self.timfiles[self.current_index].to_princeton_file(fname)
+        self.timfiles[self.current_index].to_tim_file(fname)
         print "Wrote tim file %s" % fname
 
 def increment_phase_wrap(xdata, phase_offset):
