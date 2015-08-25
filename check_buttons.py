@@ -115,9 +115,6 @@ class CheckButtons(Widget):
             for p,t,lines in zip(self.rectangles, self.labels, self.lines):
                 if (t.get_window_extent().contains(event.x, event.y) or
                     p.get_window_extent().contains(event.x, event.y) ):
-                    l1=lines #, l2 = lines
-                    l1.set_visible(not l1.get_visible())
-                    #l2.set_visible(not l2.get_visible())
                     thist = t
                     click_type='right'
                     break

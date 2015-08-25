@@ -491,6 +491,21 @@ def plot_data(tempo_results, xkey, ykey, postfit=True, prefit=False,
     options.fitcheck.on_clicked(update_fit_flag)
     redrawplot()
 
+def update_fit_flag(label, button):
+    if button=='left':
+        if label:
+            if tempo_history.get_parfile()[label].fit==None:
+                tempo_history.get_parfile()[label].fit=0
+            tempo_history.get_parfile()[label].fit=np.str((np.int(tempo_history.get_parfile()[label].fit)+1)%2)
+    if button=='right':
+        if label in ['RAJ', 'DECJ']:
+            newvalue = raw_input("New value of %s [%s]: " % (label,  tempo_history.get_parfile()[label].value))
+            #if not newvalue: newvalue = "%s.par" % basename
+            tempo_history.get_parfile()[label].value=newvalue
+        else:
+            newvalue = raw_input("New value of %s [%1.9e]: " % (label,  tempo_history.get_parfile()[label].value))
+            #if not newvalue: newvalue = "%s.par" % basename
+            tempo_history.get_parfile()[label].value=np.float(newvalue)
 
 
 ### This un2str code is taken near-verbatim from Lemming's reply at
@@ -507,7 +522,7 @@ def un2str(x, xe, precision=1):
     or as
         xxx.xx(ee)"""
     # base 10 exponents
-    x_exp = int(np.floor(np.log10(x)))
+    x_exp = int(np.floor(np.log10(abs(x))))
     xe_exp = int(np.floor(np.log10(xe)))
 
     # uncertainty
