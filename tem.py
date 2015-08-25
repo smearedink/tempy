@@ -25,7 +25,8 @@ import residuals
 
 from scipy.cluster.vq import kmeans2
 
-import toa
+import tempy_io
+from check_buttons import CheckButtons
 
 # Available x-axis types
 xvals = ['mjd', 'year', 'numtoa', 'orbitphase']
@@ -39,13 +40,13 @@ colors = {1: ['#000000'], # black
           3: ['#ff0000', '#008000', '#0000ff'], # red green blue
           4: ['#ff0000', '#FFA500', '#008000', '#0000ff'], # red orange green blue
           # red orange green blue violet
-          5: ['#ff0000', '#FFA500', '#008000', '#0000ff', '#EE82EE'], 
+          5: ['#ff0000', '#FFA500', '#008000', '#0000ff', '#EE82EE'],
           # red orange green blue indigo violet
-          6: ['#ff0000', '#FFA500', '#008000', '#0000ff', '#4B0082', '#EE82EE'], 
+          6: ['#ff0000', '#FFA500', '#008000', '#0000ff', '#4B0082', '#EE82EE'],
           # red orange yellow green blue indigo violet
-          7: ['#ff0000', '#FFA500', '#FFFF00', '#008000', '#0000ff', '#4B0082', '#EE82EE'], 
+          7: ['#ff0000', '#FFA500', '#FFFF00', '#008000', '#0000ff', '#4B0082', '#EE82EE'],
           # red orange yellow green blue indigo violet black
-          8: ['#ff0000', '#FFA500', '#FFFF00', '#008000', '#0000ff', '#4B0082', '#EE82EE', '#000000']} 
+          8: ['#ff0000', '#FFA500', '#FFFF00', '#008000', '#0000ff', '#4B0082', '#EE82EE', '#000000']}
 
 
 def find_freq_clusters(freqs):
@@ -107,7 +108,7 @@ class TempoResults:
         self.phase_wraps = {}
         self.jump_ranges = []
 
-        tim = toa.TOAset.from_tim_file(intimfn)
+        tim = tempy_io.TOAset.from_tim_file(intimfn)
         tim_ordered_index = np.argsort(tim.TOAs)
 
         # if there are phase wraps in the tim file, we want to include those
@@ -116,7 +117,7 @@ class TempoResults:
             wrap_index = tim_ordered_index[tim_wrap_index]
             self.phase_wraps[wrap_index] = \
               tim.phase_wraps[tim_wrap_index]
-        
+
         # if there are jumps in the tim file, we want to include those in the
         # initial plot
         for tim_jstart,tim_jend in tim.jump_ranges:
@@ -162,7 +163,6 @@ class TempoResults:
     def get_info(self, freq_label, index, postfit=True):
         """Given a freq_label and index return formatted text
             describing the TOA residual.
-
             Assume postfit period for calculating residual in phase,
             unless otherwise indicated.
         """
@@ -301,8 +301,8 @@ class Resids:
                 ylabel = "Residuals (Seconds)"
             else:
                 raise ValueError("Unknown yaxis type (%s)." % yopt)
-                 
-        if postfit: 
+
+        if postfit:
             for wrap_index in phase_wraps:
                 if yopt=='phase':
                     ydata[self.TOA_index >= wrap_index] += \
@@ -336,6 +336,10 @@ def plot_data(tempo_results, xkey, ykey, postfit=True, prefit=False,
     axes = []
     global ax_types
     ax_types = []
+    global ax_phase_wraps
+    ax_phase_wraps = []
+    global ax_jump_ranges
+    ax_jump_ranges = []
     handles = []
     labels = []
 
@@ -352,17 +356,20 @@ def plot_data(tempo_results, xkey, ykey, postfit=True, prefit=False,
         else:
             ax_types.append('pre')
 
+        ax_phase_wraps.append([])
+        ax_jump_ranges.append([])
+
         # set tick formatter to not use scientific notation or an offset
         tick_formatter = matplotlib.ticker.ScalarFormatter(useOffset=False)
         tick_formatter.set_scientific(False)
         axes[-1].xaxis.set_major_formatter(tick_formatter)
 
         xmin, xmax = axes[0].get_xlim()
-        
+
         for ii,(lo,hi) in enumerate(tempo_results.freqbands):
             freq_label = get_freq_label(lo, hi)
             resids = tempo_results.residuals[freq_label]
-            
+
             xlabel, xdata = resids.get_xdata(xkey)
             ylabel, ydata, yerr = resids.get_ydata(ykey, usepostfit,
                                                    tempo_results.phase_wraps)
@@ -380,7 +387,13 @@ def plot_data(tempo_results, xkey, ykey, postfit=True, prefit=False,
         # Plot phase wraps
         text_offset = offset_copy(axes[-1].transData, x=5, y=-10,
                                   units='dots')
-        for wrap_index in tempo_results.phase_wraps:
+        if usepostfit:
+            pw = tempo_results.phase_wraps
+        elif tempo_history.current_index > 0:
+            pw = tempo_history.tempo_results[tempo_history.current_index-1].phase_wraps
+        else:
+            pw = []
+        for wrap_index in pw:
             wrap_mjd_hi = tempo_results.ordered_MJDs[wrap_index]
             if wrap_index > 0:
                 wrap_mjd_lo = tempo_results.ordered_MJDs[wrap_index-1]
@@ -395,67 +408,28 @@ def plot_data(tempo_results, xkey, ykey, postfit=True, prefit=False,
             else:
                 break
             wrap_color = {'pre':'pink', 'post':'red'}
-            plt.axvline(wrap_x, ls=':', label='_nolegend_',
-                        color=wrap_color[ax_types[-1]], lw=1.5)
-            plt.text(wrap_x, axes[-1].get_ylim()[1],
-                     "%+d" % tempo_results.phase_wraps[wrap_index],
-                     transform=text_offset, size='x-small',
-                     color=wrap_color[ax_types[-1]])
-
-        ymin, ymax = axes[-1].get_ylim()
-
-        # Plot jump ranges
-        for jstart,jend in tempo_results.jump_ranges:
-            jstart_mjd = tempo_results.ordered_MJDs[jstart]
-            jend_mjd = tempo_results.ordered_MJDs[jend]
-            extend_frac = 0.1
-            if jstart > 0:
-                jstart_mjd_before = tempo_results.ordered_MJDs[jstart-1]
-            else:
-                jstart_mjd_before = jstart_mjd
-            if jend < len(tempo_results.ordered_MJDs)-1:
-                jend_mjd_after = tempo_results.ordered_MJDs[jend+1]
-            else:
-                jend_mjd_after = jend_mjd
-            dist_before = jstart_mjd - \
-              ((1-extend_frac)*jstart_mjd + extend_frac*jstart_mjd_before)
-            dist_after = (extend_frac*jend_mjd_after + \
-              (1-extend_frac)*jend_mjd) - jend_mjd
-            dist_mjd = min(dist_before, dist_after)
-            if dist_mjd < 1e-8:
-                dist_mjd = max(dist_before, dist_after)
-            jstart_mjd -= dist_mjd
-            jend_mjd += dist_mjd
-            if xkey == 'mjd':
-                jstart_x = jstart_mjd
-                jend_x = jend_mjd
-            elif xkey == 'year':
-                jstart_x = mjd_to_year(jstart_mjd)[0]
-                jend_x = mjd_to_year(jend_mjd)[0]
-            elif xkey == 'numtoa':
-                jstart_x = jstart + extend_frac
-                jend_x = jend - extend_frac
-            else:
-                break
-            plt.fill_betweenx([ymin, ymax], jstart_x, jend_x,
-                              edgecolor="orange", facecolor='yellow', lw=0.5, alpha=0.3)
-            axes[-1].set_ylim((ymin, ymax))
+            wrp = plt.axvline(wrap_x, ls=':', label='_nolegend_',
+                              color=wrap_color[ax_types[-1]], lw=1.5)
+            wrp_txt = plt.text(wrap_x, axes[-1].get_ylim()[1],
+                               "%+d" % pw[wrap_index],
+                               transform=text_offset, size='x-small',
+                               color=wrap_color[ax_types[-1]])
+            ax_phase_wraps[-1].append([wrp, wrp_txt])
 
         # set up span selector for setting new jump ranges
-       
         options.jump_spans[ax_types[-1]] = SpanSelector(axes[-1], select_jump_range, 'horizontal', useblit=True, rectprops=dict(alpha=0.5, facecolor='orange'))
         options.jump_spans[ax_types[-1]].visible = options.jump_mode
 
         if subplot > 1:
             axes[0].set_xlim((xmin, xmax))
-        
+
         # Finish off the plot
         plt.axhline(0, ls='--', label="_nolegend_", c='k', lw=0.5)
         axes[-1].ticklabel_format(style='plain', axis='x')
 
         if mark_peri and hasattr(tempo_results.outpar, 'BINARY'):
             # Be sure to check if pulsar is in a binary
-            # Cannot mark passage of periastron if not a binary 
+            # Cannot mark passage of periastron if not a binary
             if usepostfit:
                 binpsr = binary_psr.binary_psr(tempo_results.outpar.FILE)
             else:
@@ -481,6 +455,12 @@ def plot_data(tempo_results, xkey, ykey, postfit=True, prefit=False,
             plt.title("Prefit Residuals (Number of TOAs: %d)" % TOAcount)
         subplot += 1
 
+    # Plot jump ranges
+    for jstart,jend in tempo_results.jump_ranges:
+        plot_jump_range((jstart,jend))
+#        axes[-1].set_ylim((ymin, ymax))
+
+
     if numsubplots > 1:
         # Increase spacing between subplots.
         plt.subplots_adjust(hspace=0.25)
@@ -490,18 +470,95 @@ def plot_data(tempo_results, xkey, ykey, postfit=True, prefit=False,
         fntext = "Solution %d of %d, TOA file: %s, Parameter file: %s" % \
           (tempo_history.current_index+1, tempo_history.get_nsolutions(),
            tempo_results.intimfn, tempo_results.inparfn)
-        figure_text = plt.figtext(0.01, 0.01, fntext, verticalalignment='bottom', \
-                            horizontalalignment='left')
+        figure_text = plt.figtext(0.01, 0.01, fntext,
+                                  verticalalignment='bottom',
+                                  horizontalalignment='left')
 
-    # Make the legend and set its visibility state
+ # Make the legend and set its visibility state
     leg = plt.figlegend(handles, labels, 'upper right')
     leg.set_visible(show_legend)
     leg.legendPatch.set_alpha(0.5)
+    plt.subplots_adjust(right=0.8)
+
+
+    nms=[]
+    fitmes=[]
+    for b in tempo_history.get_parfile():
+        if tempo_history.get_parfile()[b].fit==None:
+            tempo_history.get_parfile()[b].fit=0
+        if not any(b in s for s in tempy_io.no_fit_pars):
+            nms.append(b)
+            fitmes.append(tempo_history.get_parfile()[b].fit)
+    rax = plt.axes([0.85, 0.1, 0.1, 0.8])
+    rax.set_frame_on(False)
+    options.fitcheck = CheckButtons(rax, nms, fitmes)
+    options.fitcheck.on_clicked(update_fit_flag)
+    redrawplot()
+
+def update_fit_flag(label, button):
+    if button=='left':
+        if label:
+            if tempo_history.get_parfile()[label].fit==None:
+                tempo_history.get_parfile()[label].fit=0
+            tempo_history.get_parfile()[label].fit=np.str((np.int(tempo_history.get_parfile()[label].fit)+1)%2)
+    if button=='right':
+        if label in ['RAJ', 'DECJ']:
+            newvalue = raw_input("New value of %s [%s]: " % (label,  tempo_history.get_parfile()[label].value))
+            if not newvalue: newvalue = "%s" % tempo_history.get_parfile()[label].value
+            tempo_history.get_parfile()[label].value=newvalue
+        else:
+            newvalue = raw_input("New value of %s [%1.9e]: " % (label,  tempo_history.get_parfile()[label].value))
+            if not newvalue: newvalue = "%1.9e" % tempo_history.get_parfile()[label].value
+            tempo_history.get_parfile()[label].value=np.float(newvalue)
+
+
+### This un2str code is taken near-verbatim from Lemming's reply at
+### http://stackoverflow.com/questions/6671053/python-pretty-print-errorbars
+def un2str(x, xe, precision=1):
+    """pretty print nominal value and uncertainty
+
+    x  - nominal value
+    xe - uncertainty
+    precision - number of significant digits in uncertainty
+
+    returns shortest string representation of `x +- xe` either as
+        x.xx(ee)e+xx
+    or as
+        xxx.xx(ee)"""
+    # base 10 exponents
+    x_exp = int(np.floor(np.log10(abs(x))))
+    xe_exp = int(np.floor(np.log10(xe)))
+
+    # uncertainty
+    un_exp = xe_exp-precision+1
+    un_int = round(xe*10**(-un_exp))
+
+    # nominal value
+    no_exp = un_exp
+    no_int = round(x*10**(-no_exp))
+
+    # format - nom(unc)exp
+    fieldw = x_exp - no_exp
+    fmt = '%%.%df' % fieldw
+    result1 = (fmt + '(%.0f)e%d') % (no_int*10**(-fieldw), un_int, x_exp)
+
+    # format - nom(unc)
+    fieldw = max(0, -no_exp)
+    fmt = '%%.%df' % fieldw
+    result2 = (fmt + '(%.0f)') % (no_int*10**no_exp, un_int*10**max(0, un_exp))
+
+    # return shortest representation
+    if len(result2) <= len(result1):
+        return result2
+    else:
+        return result1
 
 def create_plot():
     # Set up the plot
     fig = plt.figure(figsize=(11,8.5))
-
+    # Force user to interact via custom inputs
+    fig.canvas.toolbar.pack_forget()
+    fig.set_facecolor("white")
 
 def get_freq_label(lo, hi):
     """Return frequency label given a lo and hi
@@ -555,17 +612,10 @@ def quit():
     print "Quitting..."
     sys.exit(0)
 
-def click(event):
-    # Remove jump range if in jump edit mode
-    global options
-    if event.button == 3:
-        if options.jump_mode:
-            delete_jump_range(event.xdata)
-            reloadplot(tempo_results)
-
-
 def pick(event):
     global tempo_results
+    global options
+    global ax_jump_ranges
     if event.mouseevent.button == 1:
         index = event.ind
         axes = event.mouseevent.inaxes
@@ -578,6 +628,16 @@ def pick(event):
             print_text(info)
         else:
             print "Multiple TOAs selected. Zoom in and try again."
+    elif event.mouseevent.button == 3:
+        if options.jump_mode:
+            for ax in ax_jump_ranges:
+                if event.artist in ax:
+                    xmin = event.artist.get_paths()[0].get_extents().xmin
+                    xmax = event.artist.get_paths()[0].get_extents().xmax
+                    delete_jump_range(0.5*(xmin+xmax))
+                    redrawplot()
+        else:
+            print "Must be in jump edit mode ('j') to delete jump ranges."
 
 
 def print_text(lines, *args, **kwargs):
@@ -607,7 +667,8 @@ def print_help():
     print "\tT - Run Tempo with current postfit parameters and phase wraps"
     print "\tb - Return to previous Tempo solution"
     print "\tn - Go to next Tempo solution"
-    print "\to - Go to original view"
+    print "\td - Dump current Tempo solution to new par/tim files"
+    print "\tu - Go to original view (unzoom)"
     print "\t< - Go to previous view"
     print "\t> - Go to next view"
     print "\tx - Set x-axis limits (terminal input required)"
@@ -624,16 +685,17 @@ def run_tempo():
     global tempo_results
     global tempo_history
     par_fname = tempo_results.outpar.FILE
-    # in case we've gone back to a previous Tempo iteration, save the parfile
     tempo_history.save_outpar(par_fname)
     if par_fname.split('.')[-1] == 'tempy':
         new_par = par_fname
     else:
         new_par = par_fname + '.tempy'
     copyfile(tempo_results.outpar.FILE, new_par)
-    tim = toa.TOAset.from_tim_file(tempo_results.intimfn)
+    tim = tempy_io.TOAset.from_tim_file(tempo_results.intimfn)
     tim.phase_wraps = {}
     tim.jump_ranges = []
+    tempy_io.write_parfile(tempo_history.get_parfile(), new_par)
+
     tim_ordered_index = np.argsort(tim.TOAs)
     for wrap_index in tempo_results.phase_wraps:
         tim_wrap_index = np.where(tim_ordered_index == wrap_index)[0][0]
@@ -662,7 +724,7 @@ class TempoHistory:
             self.append(tempo_results)
 
     def get_nsolutions(self):
-        return len(self.tempo_results)   
+        return len(self.tempo_results)
 
     def seek_next_solution(self):
         new_index = self.current_index + 1
@@ -682,7 +744,7 @@ class TempoHistory:
                                                         self.get_nsolutions())
         else:
             print "Already at solution 1 of %d" % (self.get_nsolutions())
-    
+
     def seek_first_solution(self):
         if self.get_nsolutions():
             self.current_index = 0
@@ -703,17 +765,30 @@ class TempoHistory:
         with open(tempo_results.inparfn, 'r') as f:
             inpar = f.readlines()
             self.inpars.append(inpar)
-        with open(tempo_results.outparfn, 'r') as f:
-            outpar = f.readlines()
-            self.outpars.append(outpar)
-        timfile = toa.TOAset.from_tim_file(tempo_results.intimfn)
+        #with open(tempo_results.outparfn, 'r') as f:
+        #    outpar = f.readlines()
+        #    self.outpars.append(outpar)
+        self.outpars.append(tempy_io.read_parfile(tempo_results.outpar.FILE))
+        timfile = tempy_io.TOAset.from_tim_file(tempo_results.intimfn)
         self.timfiles.append(timfile)
         self.tempo_results.append(tempo_results)
         if increment_current:
             self.current_index += 1
 
-    def get_current_tempo_results(self):
-        return self.tempo_results[self.current_index]
+    def get_tempo_results(self, index=None):
+        if index is None:
+            index = self.current_index
+        return self.tempo_results[index]
+
+    def set_tempo_results(self, tempo_results, index=None):
+        if index is None:
+            index = self.current_index
+        self.tempo_results[index] = tempo_results
+
+    def get_parfile(self, index=None):
+        if index is None:
+            index = self.current_index
+        return self.outpars[index]
 
     def save_inpar(self, fname):
         with open(fname, 'w') as f:
@@ -721,13 +796,46 @@ class TempoHistory:
         print "Wrote input parfile %s" % fname
 
     def save_outpar(self, fname):
-        with open(fname, 'w') as f:
-            f.writelines(self.outpars[self.current_index])
+        #with open(fname, 'w') as f:
+        #    f.writelines(self.outpars[self.current_index])
+        tempy_io.write_parfile(self.outpars[self.current_index], fname)
         print "Wrote output parfile %s" % fname
 
     def save_timfile(self, fname):
         self.timfiles[self.current_index].to_tim_file(fname)
         print "Wrote tim file %s" % fname
+
+    def print_formatted_pars(self, index=None):
+        if index is None:
+            index = self.current_index
+        no_disp_pars = list(tempy_io.no_fit_pars)
+        for par in ['START', 'FINISH', 'PEPOCH']:
+            if par in no_disp_pars:
+                no_disp_pars.remove(par)
+        formatted_par_line = "%20s: %1s %-18s"
+        output_par = self.get_parfile(index)
+        for par in output_par:
+            if par not in no_disp_pars:
+                if output_par[par].fit:
+                    fit_str = '*'
+                else:
+                    fit_str = ''
+                if output_par[par].error is None:
+                    val = "%s" % output_par[par].value
+                else:
+                    if par == 'RAJ' or par == 'DECJ':
+                        split_str = output_par[par].value.split(':')
+                        split_str[-1] = un2str(float(split_str[-1]),
+                                               output_par[par].error)
+                        val = ''
+                        for item in split_str:
+                            val += item + ":"
+                        val = val[:-1]
+                    else:
+                        val = un2str(output_par[par].value,
+                                     output_par[par].error)
+                print formatted_par_line % (par, fit_str, val)
+
 
 def increment_phase_wrap(xdata, phase_offset):
     global tempo_results
@@ -749,6 +857,7 @@ def increment_phase_wrap(xdata, phase_offset):
             del tempo_results.phase_wraps[where_wrap]
     else:
         tempo_results.phase_wraps[where_wrap] = phase_offset
+    tempo_history.set_tempo_results(tempo_results)
 
 def is_in_jump_range(index):
     """
@@ -761,9 +870,23 @@ def is_in_jump_range(index):
             return ii
     return None
 
+def jump_ranges_between(index1, index2):
+    """
+    Returns all jump ranges that exist between index1 and index2 (even if they
+    only overlap partly)
+    """
+    global tempo_results
+    which_jump_ranges = []
+    for ii,(jstart,jend) in enumerate(tempo_results.jump_ranges):
+        if (jend >= index1 and jend <= index2) or \
+          (jstart <= index2 and jstart >= index1):
+            which_jump_ranges.append(ii)
+    return which_jump_ranges
+
 def select_jump_range(xdata_min, xdata_max):
     global tempo_results
     global options
+    global ax_types
     if options.xaxis == 'mjd':
         xmin, xmax = np.searchsorted(tempo_results.ordered_MJDs,
                                      [xdata_min, xdata_max])
@@ -775,19 +898,81 @@ def select_jump_range(xdata_min, xdata_max):
         xmax = int(np.floor(xdata_max))
     if xmin >= xmax:
         return
+    xmax -= 1
+
     xmin_in_jump_range = is_in_jump_range(xmin)
     xmax_in_jump_range = is_in_jump_range(xmax-1)
-    if xmin_in_jump_range is None and xmax_in_jump_range is None:
-        tempo_results.jump_ranges.append((xmin,xmax-1))
-        reloadplot(tempo_results)
+    if xmin_in_jump_range is not None and xmax_in_jump_range is not None:
+        if xmin_in_jump_range == xmax_in_jump_range:
+            #del tempo_results.jump_ranges[xmin_in_jump_range]
+            delete_jump_range_index(xmin_in_jump_range)
+    which_jump_ranges = jump_ranges_between(xmin, xmax)
+    for ii in reversed(sorted(which_jump_ranges)):
+        #del tempo_results.jump_ranges[ii]
+        delete_jump_range_index(ii)
+    tempo_results.jump_ranges.append((xmin,xmax))
+    plot_jump_range((xmin,xmax))
+    redrawplot()
+
+def plot_jump_range(jump_range):
+    global tempo_results
+    global options
+    global ax_jump_ranges
+    global axes
+    #ax = axes[ax_types.index(ax_type)]
+    jstart,jend = jump_range
+    jstart_mjd = tempo_results.ordered_MJDs[jstart]
+    jend_mjd = tempo_results.ordered_MJDs[jend]
+    extend_frac = 0.1
+    if jstart > 0:
+        jstart_mjd_before = tempo_results.ordered_MJDs[jstart-1]
     else:
-        print "Region overlaps with existing jump range"
-    #for k in options.jump_spans:
-    #    options.jump_spans[k].visible = False
+        jstart_mjd_before = jstart_mjd
+    if jend < len(tempo_results.ordered_MJDs)-1:
+        jend_mjd_after = tempo_results.ordered_MJDs[jend+1]
+    else:
+        jend_mjd_after = jend_mjd
+    dist_before = jstart_mjd - \
+      ((1-extend_frac)*jstart_mjd + extend_frac*jstart_mjd_before)
+    dist_after = (extend_frac*jend_mjd_after + \
+      (1-extend_frac)*jend_mjd) - jend_mjd
+    dist_mjd = min(dist_before, dist_after)
+    if dist_mjd < 1e-8:
+        dist_mjd = max(dist_before, dist_after)
+    jstart_mjd -= dist_mjd
+    jend_mjd += dist_mjd
+    if options.xaxis == 'mjd':
+        jstart_x = jstart_mjd
+        jend_x = jend_mjd
+    elif options.xaxis == 'year':
+        jstart_x = mjd_to_year(jstart_mjd)[0]
+        jend_x = mjd_to_year(jend_mjd)[0]
+    elif options.xaxis == 'numtoa':
+        jstart_x = jstart + extend_frac
+        jend_x = jend - extend_frac
+    else:
+        return
+    for ii,ax in enumerate(axes):
+        ymin,ymax = ax.get_ylim()
+        jmp = ax.fill_betweenx((ymin*100, ymax*100), jstart_x, jend_x,
+                               edgecolor="orange", facecolor='yellow',
+                               lw=0.5, alpha=0.3, picker=True)
+        ax_jump_ranges[ii].append(jmp)
+        ax.set_ylim(ymin,ymax)
+    #redrawplot()
+
+
+def delete_jump_range_index(index):
+    global tempo_results
+    global ax_jump_ranges
+    del tempo_results.jump_ranges[index]
+    for ax in ax_jump_ranges:
+        ax.pop(index).remove()
 
 def delete_jump_range(xdata):
     global tempo_results
     global options
+    global ax_jump_ranges
     if options.xaxis == 'mjd':
         where_clicked = np.searchsorted(tempo_results.ordered_MJDs, xdata)
     elif options.xaxis == 'year':
@@ -799,7 +984,7 @@ def delete_jump_range(xdata):
         return
     to_delete = is_in_jump_range(where_clicked)
     if to_delete is not None:
-        del tempo_results.jump_ranges[to_delete]
+        delete_jump_range_index(to_delete)
 
 def keypress(event):
     global tempo_results
@@ -825,6 +1010,7 @@ def keypress(event):
         elif event.key.lower() == 'z':
             # Turn on zoom mode
             print "Toggling zoom mode..."
+            options.jump_mode = False
             for k in options.jump_spans:
                 options.jump_spans[k].visible = False
             event.canvas.toolbar.zoom()
@@ -862,25 +1048,37 @@ def keypress(event):
             run_tempo()
             tempo_results = TempoResults(options.freqbands)
             tempo_history.append(tempo_results)
+            tempo_history.print_formatted_pars()
             reloadplot()
         elif event.key.lower() == 'b':
             # Previous solution
             tempo_history.seek_prev_solution()
-            tempo_results = tempo_history.get_current_tempo_results()
+            tempo_results = tempo_history.get_tempo_results()
             reloadplot(tempo_results)
         elif event.key.lower() == 'n':
             # Next solution
             tempo_history.seek_next_solution()
-            tempo_results = tempo_history.get_current_tempo_results()
+            tempo_results = tempo_history.get_tempo_results()
             reloadplot(tempo_results)
         elif event.key == 'R':
             # First solution
             tempo_history.seek_first_solution()
-            tempo_results = tempo_history.get_current_tempo_results()
+            tempo_results = tempo_history.get_tempo_results()
             reloadplot(tempo_results)
-        elif event.key.lower() == 'o':
+        elif event.key.lower() == 'd':
+            basename = "%s.tpy" % tempo_results.outpar.PSR
+            par_fname = raw_input("Output parfile [%s.par]: " % basename)
+            if not par_fname: par_fname = "%s.par" % basename
+            tim_fname = raw_input("Output timfile [%s.tim]: " % basename)
+            if not tim_fname: tim_fname = "%s.tim" % basename
+            tempo_history.save_outpar(par_fname)
+            tempo_history.save_timfile(tim_fname)
+        elif event.key.lower() == 'u':
             # Restore plot to original view
             print "Restoring plot..."
+            if event.canvas.toolbar._active is not None:
+                if event.canvas.toolbar._active.lower() == 'zoom':
+                    event.canvas.toolbar.zoom()
             event.canvas.toolbar.home()
         elif event.key.lower() == ',' or event.key.lower() == '<':
             # Go back to previous plot view
@@ -1015,7 +1213,7 @@ def parse_options():
         options.run_initial_fit = True
     else:
         options.run_initial_fit = False
-    
+
     return options
 
 
@@ -1036,7 +1234,9 @@ def main():
 
     tempo_results = TempoResults(options.freqbands)
     tempo_history = TempoHistory(tempo_results)
- 
+
+    tempo_history.print_formatted_pars()
+
     create_plot()
     reloadplot()
 
@@ -1051,7 +1251,7 @@ def main():
 
         # Now, register our event callback functions
         cid_keypress = fig.canvas.mpl_connect('key_press_event', keypress)
-        cid_keypress = fig.canvas.mpl_connect('button_press_event', click)
+        #cid_keypress = fig.canvas.mpl_connect('pick_event', click)
         cid_pick = fig.canvas.mpl_connect('pick_event', pick)
 
         # Finally, let the show begin!
