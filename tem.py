@@ -25,7 +25,7 @@ import residuals
 
 from scipy.cluster.vq import kmeans2
 
-import toa
+import tempy_io
 from check_buttons import CheckButtons
 
 # Available x-axis types
@@ -108,7 +108,7 @@ class TempoResults:
         self.phase_wraps = {}
         self.jump_ranges = []
 
-        tim = toa.TOAset.from_tim_file(intimfn)
+        tim = tempy_io.TOAset.from_tim_file(intimfn)
         tim_ordered_index = np.argsort(tim.TOAs)
 
         # if there are phase wraps in the tim file, we want to include those
@@ -486,7 +486,7 @@ def plot_data(tempo_results, xkey, ykey, postfit=True, prefit=False,
     for b in tempo_history.get_parfile():
         if tempo_history.get_parfile()[b].fit==None:
             tempo_history.get_parfile()[b].fit=0
-        if not any(b in s for s in toa.no_fit_pars):
+        if not any(b in s for s in tempy_io.no_fit_pars):
             nms.append(b)
             fitmes.append(tempo_history.get_parfile()[b].fit)
     rax = plt.axes([0.85, 0.1, 0.1, 0.8])
@@ -691,10 +691,10 @@ def run_tempo():
     else:
         new_par = par_fname + '.tempy'
     copyfile(tempo_results.outpar.FILE, new_par)
-    tim = toa.TOAset.from_tim_file(tempo_results.intimfn)
+    tim = tempy_io.TOAset.from_tim_file(tempo_results.intimfn)
     tim.phase_wraps = {}
     tim.jump_ranges = []
-    toa.write_parfile(tempo_history.get_parfile(), new_par)
+    tempy_io.write_parfile(tempo_history.get_parfile(), new_par)
 
     tim_ordered_index = np.argsort(tim.TOAs)
     for wrap_index in tempo_results.phase_wraps:
@@ -768,8 +768,8 @@ class TempoHistory:
         #with open(tempo_results.outparfn, 'r') as f:
         #    outpar = f.readlines()
         #    self.outpars.append(outpar)
-        self.outpars.append(toa.read_parfile(tempo_results.outpar.FILE))
-        timfile = toa.TOAset.from_tim_file(tempo_results.intimfn)
+        self.outpars.append(tempy_io.read_parfile(tempo_results.outpar.FILE))
+        timfile = tempy_io.TOAset.from_tim_file(tempo_results.intimfn)
         self.timfiles.append(timfile)
         self.tempo_results.append(tempo_results)
         if increment_current:
@@ -798,7 +798,7 @@ class TempoHistory:
     def save_outpar(self, fname):
         #with open(fname, 'w') as f:
         #    f.writelines(self.outpars[self.current_index])
-        toa.write_parfile(self.outpars[self.current_index], fname)
+        tempy_io.write_parfile(self.outpars[self.current_index], fname)
         print "Wrote output parfile %s" % fname
 
     def save_timfile(self, fname):
@@ -808,7 +808,7 @@ class TempoHistory:
     def print_formatted_pars(self, index=None):
         if index is None:
             index = self.current_index
-        no_disp_pars = list(toa.no_fit_pars)
+        no_disp_pars = list(tempy_io.no_fit_pars)
         for par in ['START', 'FINISH', 'PEPOCH']:
             if par in no_disp_pars:
                 no_disp_pars.remove(par)
