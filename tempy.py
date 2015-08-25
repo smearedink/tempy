@@ -479,36 +479,60 @@ def plot_data(tempo_results, xkey, ykey, postfit=True, prefit=False,
 
     nms=[]
     fitmes=[]
-    for b in tempo_history.get_current_parfile():
-        if tempo_history.get_current_parfile()[b].fit==None:
-            tempo_history.get_current_parfile()[b].fit=0
+    for b in tempo_history.get_parfile():
+        if tempo_history.get_parfile()[b].fit==None:
+            tempo_history.get_parfile()[b].fit=0
         if not any(b in s for s in toa.no_fit_pars):
             nms.append(b)
-            fitmes.append(tempo_history.get_current_parfile()[b].fit)
+            fitmes.append(tempo_history.get_parfile()[b].fit)
     rax = plt.axes([0.85, 0.1, 0.1, 0.8])
     rax.set_frame_on(False)
     options.fitcheck = CheckButtons(rax, nms, fitmes)
     options.fitcheck.on_clicked(update_fit_flag)
     redrawplot()
 
-def update_fit_flag(label, button):
-    if button=='left':
-        if label:
-            if tempo_history.get_current_parfile()[label].fit==None:
-                tempo_history.get_current_parfile()[label].fit=0
-            tempo_history.get_current_parfile()[label].fit=np.str((np.int(tempo_history.get_current_parfile()[label].fit)+1)%2)
-    if button=='right':
-        if label in ['RAJ', 'DECJ']:
-            newvalue = raw_input("New value of %s [%s]: " % (label,  tempo_history.get_current_parfile()[label].value))
-            #if not newvalue: newvalue = "%s.par" % basename
-            tempo_history.get_current_parfile()[label].value=newvalue
-
-        else:
-            newvalue = raw_input("New value of %s [%1.9e]: " % (label,  tempo_history.get_current_parfile()[label].value))
-            #if not newvalue: newvalue = "%s.par" % basename
-            tempo_history.get_current_parfile()[label].value=np.float(newvalue)
 
 
+### This un2str code is taken near-verbatim from Lemming's reply at
+### http://stackoverflow.com/questions/6671053/python-pretty-print-errorbars
+def un2str(x, xe, precision=1):
+    """pretty print nominal value and uncertainty
+
+    x  - nominal value
+    xe - uncertainty
+    precision - number of significant digits in uncertainty
+
+    returns shortest string representation of `x +- xe` either as
+        x.xx(ee)e+xx
+    or as
+        xxx.xx(ee)"""
+    # base 10 exponents
+    x_exp = int(np.floor(np.log10(x)))
+    xe_exp = int(np.floor(np.log10(xe)))
+
+    # uncertainty
+    un_exp = xe_exp-precision+1
+    un_int = round(xe*10**(-un_exp))
+
+    # nominal value
+    no_exp = un_exp
+    no_int = round(x*10**(-no_exp))
+
+    # format - nom(unc)exp
+    fieldw = x_exp - no_exp
+    fmt = '%%.%df' % fieldw
+    result1 = (fmt + '(%.0f)e%d') % (no_int*10**(-fieldw), un_int, x_exp)
+
+    # format - nom(unc)
+    fieldw = max(0, -no_exp)
+    fmt = '%%.%df' % fieldw
+    result2 = (fmt + '(%.0f)') % (no_int*10**no_exp, un_int*10**max(0, un_exp))
+
+    # return shortest representation
+    if len(result2) <= len(result1):
+        return result2
+    else:
+        return result1
 
 def create_plot():
     # Set up the plot
@@ -651,7 +675,7 @@ def run_tempo():
     tim = toa.TOAset.from_tim_file(tempo_results.intimfn)
     tim.phase_wraps = {}
     tim.jump_ranges = []
-    toa.write_parfile(tempo_history.get_current_parfile(), new_par)
+    toa.write_parfile(tempo_history.get_parfile(), new_par)
 
     tim_ordered_index = np.argsort(tim.TOAs)
     for wrap_index in tempo_results.phase_wraps:
@@ -732,11 +756,20 @@ class TempoHistory:
         if increment_current:
             self.current_index += 1
 
-    def get_current_tempo_results(self):
-        return self.tempo_results[self.current_index]
+    def get_tempo_results(self, index=None):
+        if index is None:
+            index = self.current_index
+        return self.tempo_results[index]
 
-    def get_current_parfile(self):
-        return self.outpars[self.current_index]
+    def set_tempo_results(self, tempo_results, index=None):
+        if index is None:
+            index = self.current_index
+        self.tempo_results[index] = tempo_results
+
+    def get_parfile(self, index=None):
+        if index is None:
+            index = self.current_index
+        return self.outpars[index]
 
     def save_inpar(self, fname):
         with open(fname, 'w') as f:
@@ -752,6 +785,38 @@ class TempoHistory:
     def save_timfile(self, fname):
         self.timfiles[self.current_index].to_tim_file(fname)
         print "Wrote tim file %s" % fname
+
+    def print_formatted_pars(self, index=None):
+        if index is None:
+            index = self.current_index
+        no_disp_pars = list(toa.no_fit_pars)
+        for par in ['START', 'FINISH', 'PEPOCH']:
+            if par in no_disp_pars:
+                no_disp_pars.remove(par)
+        formatted_par_line = "%20s: %1s %-18s"
+        output_par = self.get_parfile(index)
+        for par in output_par:
+            if par not in no_disp_pars:
+                if output_par[par].fit:
+                    fit_str = '*'
+                else:
+                    fit_str = ''
+                if output_par[par].error is None:
+                    val = "%s" % output_par[par].value
+                else:
+                    if par == 'RAJ' or par == 'DECJ':
+                        split_str = output_par[par].value.split(':')
+                        split_str[-1] = un2str(float(split_str[-1]),
+                                               output_par[par].error)
+                        val = ''
+                        for item in split_str:
+                            val += item + ":"
+                        val = val[:-1]
+                    else:
+                        val = un2str(output_par[par].value,
+                                     output_par[par].error)
+                print formatted_par_line % (par, fit_str, val)
+
 
 def increment_phase_wrap(xdata, phase_offset):
     global tempo_results
@@ -963,21 +1028,22 @@ def keypress(event):
             run_tempo()
             tempo_results = TempoResults(options.freqbands)
             tempo_history.append(tempo_results)
+            tempo_history.print_formatted_pars()
             reloadplot()
         elif event.key.lower() == 'b':
             # Previous solution
             tempo_history.seek_prev_solution()
-            tempo_results = tempo_history.get_current_tempo_results()
+            tempo_results = tempo_history.get_tempo_results()
             reloadplot(tempo_results)
         elif event.key.lower() == 'n':
             # Next solution
             tempo_history.seek_next_solution()
-            tempo_results = tempo_history.get_current_tempo_results()
+            tempo_results = tempo_history.get_tempo_results()
             reloadplot(tempo_results)
         elif event.key == 'R':
             # First solution
             tempo_history.seek_first_solution()
-            tempo_results = tempo_history.get_current_tempo_results()
+            tempo_results = tempo_history.get_tempo_results()
             reloadplot(tempo_results)
         elif event.key.lower() == 'd':
             basename = "%s.tpy" % tempo_results.outpar.PSR
@@ -1148,6 +1214,8 @@ def main():
 
     tempo_results = TempoResults(options.freqbands)
     tempo_history = TempoHistory(tempo_results)
+
+    tempo_history.print_formatted_pars()
 
     create_plot()
     reloadplot()
