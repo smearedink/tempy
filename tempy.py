@@ -501,10 +501,15 @@ def update_fit_flag(label, button):
         if label:
             if tempo_history.get_current_parfile()[label].fit==None:
                 tempo_history.get_current_parfile()[label].fit=0
+            if label in ['RAJ', 'DECJ']:
+                newvalue = raw_input("New value of %s [%s]: " % (label,  tempo_history.get_current_parfile()[label].value))
+                #if not newvalue: newvalue = "%s.par" % basename
+                tempo_history.get_current_parfile()[label].value=newvalue
 
-            newvalue = raw_input("Old value of %s [%f]: " % (label,  tempo_history.get_current_parfile()[label].value))
-            #if not newvalue: newvalue = "%s.par" % basename
-            tempo_history.get_current_parfile()[label].value=newvalue
+            else:
+                newvalue = raw_input("New value of %s [%1.9e]: " % (label,  tempo_history.get_current_parfile()[label].value))
+                #if not newvalue: newvalue = "%s.par" % basename
+                tempo_history.get_current_parfile()[label].value=np.float(newvalue)
 
 
 
