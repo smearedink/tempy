@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
 # Copied from Patrick Lazarus's pyplotres 2015 Aug 18,
-# then mangled by Erik Madsen into its present form
+# then mangled by Erik Madsen (et al.) into its present form
 
 import optparse
 import sys
