@@ -1,17 +1,7 @@
 import numpy as np
 
-from matplotlib.mlab import dist
-from matplotlib.patches import Circle, Rectangle
-from matplotlib.lines import Line2D
-from matplotlib.transforms import blended_transform_factory
-import pylab as plt
-import toa
-class Widget(object):
-    """
-    Abstract base class for GUI neutral widgets
-    """
-    drawon = True
-    eventson = True
+from matplotlib.patches import Rectangle
+from matplotlib.widgets import Widget
 
 class CheckButtons(Widget):
     """
@@ -75,12 +65,10 @@ class CheckButtons(Widget):
             w, h = dy/2., dy/2.
             x, y = 0.05, y-h/2.
 
-            #p = Circle(xy=(x,y), radius=dy/2., facecolor=axcolor)#,transform=ax.transAxes)
             p = Rectangle(xy=(x,y), width=0.9, height=h, facecolor=axcolor,transform=ax.transAxes)
 
 
             l1 = Rectangle(xy=(x,y), width=0.9, height=h, facecolor='red',alpha=0.5, transform=ax.transAxes)
-            #l2 = Line2D([x, x+w], [y, y+h], **lineparams)
 
             l1.set_visible(actives[cnt])
             #l2.set_visible(actives[cnt])
