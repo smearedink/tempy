@@ -1,5 +1,5 @@
 # tempy_utils.tempy_io
 
-from classes import TOA, TOAset
-from functions import read_parfile, write_parfile
-from settings import string_pars, no_fit_pars
+from _classes import TOA, TOAset
+from _functions import read_parfile, write_parfile
+from _settings import string_pars, no_fit_pars
