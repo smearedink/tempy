@@ -280,21 +280,10 @@ class Resids:
 
 
 
-def plot_data(tempo_results, xkey, ykey, postfit=True, prefit=False,
+def plot_data(tempo_results, xkey, ykey,
               interactive=True, mark_peri=False, show_legend=True):
-    # figure out what should be plotted
-    # True means to plot postfit
-    # False means to plot prefit
-    if postfit and prefit:
-        to_plot_postfit = [False, True]
-    elif postfit and not prefit:
-        to_plot_postfit = [True]
-    elif not postfit and prefit:
-        to_plot_postfit = [False]
-    else:
-        raise EmptyPlotValueError("At least one of prefit and postfit must be True.")
     subplot = 1
-    numsubplots = len(to_plot_postfit)
+    numsubplots = 2
     global axes
     axes = []
     global ax_types
@@ -306,7 +295,7 @@ def plot_data(tempo_results, xkey, ykey, postfit=True, prefit=False,
     handles = []
     labels = []
 
-    for usepostfit in to_plot_postfit:
+    for usepostfit in [False, True]:# Always use pre, then post
         TOAcount = 0
         # All subplots are in a single column
         if subplot == 1:
@@ -515,17 +504,10 @@ def reloadplot(with_tempo_results=None):
         tempo_results = with_tempo_results
     try:
         plot_data(tempo_results, options.xaxis, options.yaxis,
-                  postfit=options.postfit, prefit=options.prefit,
                   interactive=options.interactive,
                   mark_peri=options.mark_peri, show_legend=options.legend)
     except EmptyPlotValueError, msg:
         print msg
-        print "Press 'p'/'P' to add prefit/postfit plot."
-        plt.figtext(0.5, 0.5, (str(msg) + "\n" + \
-                        "Press 'p'/'P' to add prefit/postfit plot."), \
-                    horizontalalignment='center', \
-                    verticalalignment='center', \
-                    bbox=dict(facecolor='white', alpha=0.75))
     fig.set_visible(True)
     redrawplot()
 
@@ -581,8 +563,6 @@ def print_help():
     print "\tq - Quit"
     print "\ts - Save current plot(s) to PostScript file"
     print "\tc - Try to determine optimal color pallete"
-    print "\tp - Toggle prefit display on/off"
-    print "\tP - Toggle postfit display on/off"
     print "\tz - Toggle Zoom-mode on/off"
     print "\tm - Toggle marking of periastron passages on/off"
     print "\tL - Toggle legend on/off"
@@ -899,16 +879,6 @@ def keypress(event):
             yind = (yind + 1) % len(yvals)
             print "Toggling plot scale...[%s]"%yvals[yind], yind
             options.yaxis = yvals[yind]
-            reloadplot(tempo_results)
-        elif event.key == 'p':
-            options.prefit = not options.prefit
-            print "Toggling prefit-residuals display to: %s" % \
-                    ((options.prefit and "ON") or "OFF")
-            reloadplot(tempo_results)
-        elif event.key == 'P':
-            options.postfit = not options.postfit
-            print "Toggling postfit-residuals display to: %s" % \
-                    ((options.postfit and "ON") or "OFF")
             reloadplot(tempo_results)
         elif event.key.lower() == 'x':
             # Set x-axis limits
