@@ -616,19 +616,19 @@ def pick(event):
     global tempo_results
     global options
     global ax_jump_ranges
-    if event.mouseevent.button == 1:
-        index = event.ind
-        axes = event.mouseevent.inaxes
-        if axes:
-            title = axes.get_title()
-            postfit = ("Postfit" in title)
-        if len(index) == 1:
-            freq_label = event.artist.get_label()
-            info = tempo_results.get_info(freq_label, index, postfit)
-            print_text(info)
-        else:
-            print "Multiple TOAs selected. Zoom in and try again."
-    elif event.mouseevent.button == 3:
+#    if event.mouseevent.button == 1:
+#        index = event.ind
+#        axes = event.mouseevent.inaxes
+#        if axes:
+#            title = axes.get_title()
+#            postfit = ("Postfit" in title)
+#        if len(index) == 1:
+#            freq_label = event.artist.get_label()
+#            info = tempo_results.get_info(freq_label, index, postfit)
+#            print_text(info)
+#        else:
+#            print "Multiple TOAs selected. Zoom in and try again."
+    if event.mouseevent.button == 3:
         if options.jump_mode:
             for ax in ax_jump_ranges:
                 if event.artist in ax:
