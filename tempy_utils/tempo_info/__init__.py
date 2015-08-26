@@ -1,3 +1,3 @@
 # tempy_utils.tempo_info
 
-from classes import TempoHistory
+from _classes import TempoHistory
