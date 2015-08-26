@@ -25,8 +25,10 @@ import residuals
 
 from scipy.cluster.vq import kmeans2
 
-import tempy_io
-from check_buttons import CheckButtons
+from tempy_utils import un2str, find_freq_clusters, colors
+from tempy_utils import CheckButtons
+from tempy_utils import tempy_io
+from tempy_utils.tempo_info import TempoHistory
 
 # Available x-axis types
 xvals = ['mjd', 'year', 'numtoa', 'orbitphase']
@@ -35,50 +37,6 @@ xind = 0
 yvals = ['phase', 'usec', 'sec']
 yind = 0
 
-colors = {1: ['#000000'], # black
-          2: ['#ff0000', '#0000ff'], # red blue
-          3: ['#ff0000', '#008000', '#0000ff'], # red green blue
-          4: ['#ff0000', '#FFA500', '#008000', '#0000ff'], # red orange green blue
-          # red orange green blue violet
-          5: ['#ff0000', '#FFA500', '#008000', '#0000ff', '#EE82EE'],
-          # red orange green blue indigo violet
-          6: ['#ff0000', '#FFA500', '#008000', '#0000ff', '#4B0082', '#EE82EE'],
-          # red orange yellow green blue indigo violet
-          7: ['#ff0000', '#FFA500', '#FFFF00', '#008000', '#0000ff', '#4B0082', '#EE82EE'],
-          # red orange yellow green blue indigo violet black
-          8: ['#ff0000', '#FFA500', '#FFFF00', '#008000', '#0000ff', '#4B0082', '#EE82EE', '#000000']}
-
-
-def find_freq_clusters(freqs):
-    # first make a histogram
-    minf, maxf = freqs.min(), freqs.max()
-    maxbins = 8  # related to the max colors defined...
-    df = 4.0 # MHz
-    if ((maxf - minf) < df):  # Only a single freq to our resolution
-        return [[0.0, 'inf']]
-    numbins = int((maxf - minf) / df) + 2
-    lobound = minf - 0.5 * df
-    hibound = lobound + numbins * df
-    hist, edges = np.histogram(freqs, numbins, [lobound, hibound])
-    # Now choose the maxbins biggest bins where there are TOAs
-    hibins = hist.argsort()[::-1]
-    hibins = hibins[hist[hibins] > 0]
-    if len(hibins) > maxbins:
-        hibins = hibins[:maxbins]
-    ctrs = edges[hibins] + 0.5 * df
-    ctrs.sort()
-    # and use these as starting points for kmeans
-    kmeans, indices = kmeans2(freqs, ctrs)
-    if len(kmeans)==1:
-        return [[0.0, 'inf']]
-    elif len(kmeans)==2:
-        return [[0.0, kmeans.mean()], [kmeans.mean(), 'inf']]
-    else:
-        freqbands = [[0.0, kmeans[0:2].mean()]]
-        for ii in range(len(kmeans)-2):
-            freqbands.append([kmeans[ii:ii+2].mean(), kmeans[ii+1:ii+3].mean()])
-        freqbands.append([kmeans[-2:].mean(), 'inf'])
-        return freqbands
 
 class TempoResults:
     def __init__(self, freqbands):
@@ -512,46 +470,7 @@ def update_fit_flag(label, button):
             tempo_history.get_parfile()[label].value=np.float(newvalue)
 
 
-### This un2str code is taken near-verbatim from Lemming's reply at
-### http://stackoverflow.com/questions/6671053/python-pretty-print-errorbars
-def un2str(x, xe, precision=1):
-    """pretty print nominal value and uncertainty
 
-    x  - nominal value
-    xe - uncertainty
-    precision - number of significant digits in uncertainty
-
-    returns shortest string representation of `x +- xe` either as
-        x.xx(ee)e+xx
-    or as
-        xxx.xx(ee)"""
-    # base 10 exponents
-    x_exp = int(np.floor(np.log10(abs(x))))
-    xe_exp = int(np.floor(np.log10(xe)))
-
-    # uncertainty
-    un_exp = xe_exp-precision+1
-    un_int = round(xe*10**(-un_exp))
-
-    # nominal value
-    no_exp = un_exp
-    no_int = round(x*10**(-no_exp))
-
-    # format - nom(unc)exp
-    fieldw = x_exp - no_exp
-    fmt = '%%.%df' % fieldw
-    result1 = (fmt + '(%.0f)e%d') % (no_int*10**(-fieldw), un_int, x_exp)
-
-    # format - nom(unc)
-    fieldw = max(0, -no_exp)
-    fmt = '%%.%df' % fieldw
-    result2 = (fmt + '(%.0f)') % (no_int*10**no_exp, un_int*10**max(0, un_exp))
-
-    # return shortest representation
-    if len(result2) <= len(result1):
-        return result2
-    else:
-        return result1
 
 def create_plot():
     # Set up the plot
@@ -710,131 +629,6 @@ def run_tempo():
         new_timfn = tempo_results.intimfn + ".tempy"
     tim.to_tim_file(new_timfn)
     subprocess.call(["tempo", "-f", new_par, new_timfn])
-
-class TempoHistory:
-    def __init__(self, tempo_results=None):
-        self.current_index = -1
-        # parfiles are currently stored simply as raw strings
-        self.inpars = []
-        self.outpars = []
-        # timfiles are TOAset objects
-        self.timfiles = []
-        self.tempo_results = []
-        if tempo_results is not None:
-            self.append(tempo_results)
-
-    def get_nsolutions(self):
-        return len(self.tempo_results)
-
-    def seek_next_solution(self):
-        new_index = self.current_index + 1
-        if new_index < self.get_nsolutions():
-            self.current_index = new_index
-            print "Moving ahead to solution %d of %d" % (new_index + 1,
-                                                         self.get_nsolutions())
-        else:
-            print "Already at solution %d of %d" % (self.get_nsolutions(),
-                                                    self.get_nsolutions())
-
-    def seek_prev_solution(self):
-        new_index = self.current_index - 1
-        if new_index >= 0 and self.get_nsolutions():
-            self.current_index = new_index
-            print "Moving back to solution %d of %d" % (new_index + 1,
-                                                        self.get_nsolutions())
-        else:
-            print "Already at solution 1 of %d" % (self.get_nsolutions())
-
-    def seek_first_solution(self):
-        if self.get_nsolutions():
-            self.current_index = 0
-
-    def seek_solution(self, n):
-        if n >= 0 and n < self.get_nsolutions():
-            self.current_index = n
-
-    def clear_future_history(self):
-        end = self.current_index + 1
-        self.inpars = self.inpars[:end]
-        self.outpars = self.outpars[:end]
-        self.timfiles = self.timfiles[:end]
-        self.tempo_results = self.tempo_results[:end]
-
-    def append(self, tempo_results, increment_current=True):
-        self.clear_future_history()
-        with open(tempo_results.inparfn, 'r') as f:
-            inpar = f.readlines()
-            self.inpars.append(inpar)
-        #with open(tempo_results.outparfn, 'r') as f:
-        #    outpar = f.readlines()
-        #    self.outpars.append(outpar)
-        self.outpars.append(tempy_io.read_parfile(tempo_results.outpar.FILE))
-        timfile = tempy_io.TOAset.from_tim_file(tempo_results.intimfn)
-        self.timfiles.append(timfile)
-        self.tempo_results.append(tempo_results)
-        if increment_current:
-            self.current_index += 1
-
-    def get_tempo_results(self, index=None):
-        if index is None:
-            index = self.current_index
-        return self.tempo_results[index]
-
-    def set_tempo_results(self, tempo_results, index=None):
-        if index is None:
-            index = self.current_index
-        self.tempo_results[index] = tempo_results
-
-    def get_parfile(self, index=None):
-        if index is None:
-            index = self.current_index
-        return self.outpars[index]
-
-    def save_inpar(self, fname):
-        with open(fname, 'w') as f:
-            f.writelines(self.inpars[self.current_index])
-        print "Wrote input parfile %s" % fname
-
-    def save_outpar(self, fname):
-        #with open(fname, 'w') as f:
-        #    f.writelines(self.outpars[self.current_index])
-        tempy_io.write_parfile(self.outpars[self.current_index], fname)
-        print "Wrote output parfile %s" % fname
-
-    def save_timfile(self, fname):
-        self.timfiles[self.current_index].to_tim_file(fname)
-        print "Wrote tim file %s" % fname
-
-    def print_formatted_pars(self, index=None):
-        if index is None:
-            index = self.current_index
-        no_disp_pars = list(tempy_io.no_fit_pars)
-        for par in ['START', 'FINISH', 'PEPOCH']:
-            if par in no_disp_pars:
-                no_disp_pars.remove(par)
-        formatted_par_line = "%20s: %1s %-18s"
-        output_par = self.get_parfile(index)
-        for par in output_par:
-            if par not in no_disp_pars:
-                if output_par[par].fit:
-                    fit_str = '*'
-                else:
-                    fit_str = ''
-                if output_par[par].error is None:
-                    val = "%s" % output_par[par].value
-                else:
-                    if par == 'RAJ' or par == 'DECJ':
-                        split_str = output_par[par].value.split(':')
-                        split_str[-1] = un2str(float(split_str[-1]),
-                                               output_par[par].error)
-                        val = ''
-                        for item in split_str:
-                            val += item + ":"
-                        val = val[:-1]
-                    else:
-                        val = un2str(output_par[par].value,
-                                     output_par[par].error)
-                print formatted_par_line % (par, fit_str, val)
 
 
 def increment_phase_wrap(xdata, phase_offset):
