@@ -276,21 +276,10 @@ class Resids:
 
 
 
-def plot_data(tempo_results, xkey, ykey, postfit=True, prefit=False,
+def plot_data(tempo_results, xkey, ykey,
               interactive=True, mark_peri=False, show_legend=True):
-    # figure out what should be plotted
-    # True means to plot postfit
-    # False means to plot prefit
-    if postfit and prefit:
-        to_plot_postfit = [False, True]
-    elif postfit and not prefit:
-        to_plot_postfit = [True]
-    elif not postfit and prefit:
-        to_plot_postfit = [False]
-    else:
-        raise EmptyPlotValueError("At least one of prefit and postfit must be True.")
     subplot = 1
-    numsubplots = len(to_plot_postfit)
+    numsubplots = 2
     global axes
     axes = []
     global ax_types
@@ -302,7 +291,7 @@ def plot_data(tempo_results, xkey, ykey, postfit=True, prefit=False,
     handles = []
     labels = []
 
-    for usepostfit in to_plot_postfit:
+    for usepostfit in [False, True]:# Always use pre, then post
         TOAcount = 0
         # All subplots are in a single column
         if subplot == 1:
@@ -511,17 +500,10 @@ def reloadplot(with_tempo_results=None):
         tempo_results = with_tempo_results
     try:
         plot_data(tempo_results, options.xaxis, options.yaxis,
-                  postfit=options.postfit, prefit=options.prefit,
                   interactive=options.interactive,
                   mark_peri=options.mark_peri, show_legend=options.legend)
     except EmptyPlotValueError, msg:
         print msg
-        print "Press 'p'/'P' to add prefit/postfit plot."
-        plt.figtext(0.5, 0.5, (str(msg) + "\n" + \
-                        "Press 'p'/'P' to add prefit/postfit plot."), \
-                    horizontalalignment='center', \
-                    verticalalignment='center', \
-                    bbox=dict(facecolor='white', alpha=0.75))
     fig.set_visible(True)
     redrawplot()
 
@@ -577,8 +559,6 @@ def print_help():
     print "\tq - Quit"
     print "\ts - Save current plot(s) to PostScript file"
     print "\tc - Try to determine optimal color pallete"
-    print "\tp - Toggle prefit display on/off"
-    print "\tP - Toggle postfit display on/off"
     print "\tz - Toggle Zoom-mode on/off"
     print "\tm - Toggle marking of periastron passages on/off"
     print "\tL - Toggle legend on/off"
@@ -587,15 +567,13 @@ def print_help():
     print "\t+ - Insert positive phase wrap at cursor position"
     print "\t- - Insert negative phase wrap at cursor position"
     print "\t[Backspace] - Remove all phase wraps"
-    print "\tT - Run Tempo with current postfit parameters and phase wraps"
+    print "\tx - Run Tempo with current postfit parameters and phase wraps"
     print "\tb - Return to previous Tempo solution"
     print "\tn - Go to next Tempo solution"
     print "\td - Dump current Tempo solution to new par/tim files"
     print "\tu - Go to original view (unzoom)"
     print "\t< - Go to previous view"
     print "\t> - Go to next view"
-    print "\tx - Set x-axis limits (terminal input required)"
-    print "\ty - Sey y-axis limits (terminal input required)"
     print "\tr - Reload residuals"
     print "\tt - Cycle through y-axis types ('phase', 'usec', 'sec')"
     print "\t[Space] - Cycle through x-axis types ('mjd', 'year', 'numtoa',\n"\
@@ -842,7 +820,7 @@ def keypress(event):
                 print "Jump edit mode off"
             for k in options.jump_spans:
                 options.jump_spans[k].visible = not options.jump_spans[k].visible
-        elif event.key == 'T':
+        elif event.key.lower() == 'x':
             run_tempo()
             tempo_results = TempoResults(options.freqbands)
             tempo_history.append(tempo_results)
@@ -891,58 +869,11 @@ def keypress(event):
             print "Toggling plot type...[%s]"%xvals[xind], xind
             options.xaxis = xvals[xind]
             reloadplot(tempo_results)
-        elif event.key == 't':
+        elif event.key.lower() == 't':
             yind = (yind + 1) % len(yvals)
             print "Toggling plot scale...[%s]"%yvals[yind], yind
             options.yaxis = yvals[yind]
             reloadplot(tempo_results)
-        elif event.key == 'p':
-            options.prefit = not options.prefit
-            print "Toggling prefit-residuals display to: %s" % \
-                    ((options.prefit and "ON") or "OFF")
-            reloadplot(tempo_results)
-        elif event.key == 'P':
-            options.postfit = not options.postfit
-            print "Toggling postfit-residuals display to: %s" % \
-                    ((options.postfit and "ON") or "OFF")
-            reloadplot(tempo_results)
-        elif event.key.lower() == 'x':
-            # Set x-axis limits
-            print "Setting x-axis limits. User input required..."
-            xmin = raw_input("X-axis minimum: ")
-            xmax = raw_input("X-axis maximum: ")
-            try:
-                xmin = float(xmin)
-                xmax = float(xmax)
-                if xmax <= xmin:
-                    raise ValueError
-            except ValueError:
-                print "Bad values provided!"
-                return
-            plt.xlim(xmin, xmax)
-        elif event.key.lower() == 'y':
-            global axes
-            # Set y-axis limits
-            print "Setting y-axis limits. User input required..."
-            if len(axes) == 2:
-                axes_to_adjust = raw_input("Axes to adjust (pre/post): ")
-                if axes_to_adjust.lower().startswith('pre'):
-                    plt.axes(axes[0])
-                elif axes_to_adjust.lower().startswith('post'):
-                    plt.axes(axes[1])
-                else:
-                    raise ValueError
-            ymin = raw_input("Y-axis minimum: ")
-            ymax = raw_input("Y-axis maximum: ")
-            try:
-                ymin = float(ymin)
-                ymax = float(ymax)
-                if ymax <= ymin:
-                    raise ValueError
-            except ValueError:
-                print "Bad values provided!"
-                return
-            plt.ylim(ymin, ymax)
         elif event.key.lower() == 'h':
             print_help()
 
