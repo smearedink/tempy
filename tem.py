@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
 # Copied from Patrick Lazarus's pyplotres 2015 Aug 18,
-# then mangled by Erik Madsen into its present form
+# then mangled by Erik Madsen (et al.) into its present form
 
 import optparse
 import sys
@@ -220,6 +220,10 @@ class Resids:
             'postfit' is a boolean argument that determines if
             postfit, or prefit data is to be returned.
         """
+        if postfit==True:
+            prefix='Postfit '
+        if postfit==False:
+            prefix='Prefit '
         if not isinstance(key, types.StringType):
             raise ValueError("key must be of type string.")
         yopt = key.lower()
@@ -230,15 +234,15 @@ class Resids:
                 # NOTE: Should use P at TOA not at PEPOCH
                 #
                 yerror = self.uncertainty/self.outpar.P0
-                ylabel = "Residuals (Phase)"
+                ylabel = prefix+"Residuals (Phase)"
             elif yopt == 'usec':
                 ydata = self.postfit_sec*1e6
                 yerror = self.uncertainty*1e6
-                ylabel = "Residuals (uSeconds)"
+                ylabel = prefix+"Residuals (uSeconds)"
             elif yopt == 'sec':
                 ydata = self.postfit_sec.copy()
                 yerror = self.uncertainty.copy()
-                ylabel = "Residuals (Seconds)"
+                ylabel = prefix+"Residuals (Seconds)"
             else:
                 raise ValueError("Unknown yaxis type (%s)." % yopt)
         else:
@@ -248,15 +252,15 @@ class Resids:
                 # NOTE: Should use P at TOA not at PEPOCH
                 #
                 yerror = self.uncertainty/self.inpar.P0
-                ylabel = "Residuals (Phase)"
+                ylabel = prefix+"Residuals (Phase)"
             elif yopt=='usec':
                 ydata = self.prefit_sec*1e6
                 yerror = self.uncertainty*1e6
-                ylabel = "Residuals (uSeconds)"
+                ylabel = prefix+"Residuals (uSeconds)"
             elif yopt=='sec':
                 ydata = self.prefit_sec.copy()
                 yerror = self.uncertainty.copy()
-                ylabel = "Residuals (Seconds)"
+                ylabel = prefix+"Residuals (Seconds)"
             else:
                 raise ValueError("Unknown yaxis type (%s)." % yopt)
 
@@ -273,6 +277,7 @@ class Resids:
                       phase_wraps[wrap_index]*self.outpar.P0
 
         return (ylabel, ydata, yerror)
+
 
 
 def plot_data(tempo_results, xkey, ykey, postfit=True, prefit=False,
@@ -407,10 +412,6 @@ def plot_data(tempo_results, xkey, ykey, postfit=True, prefit=False,
             axes[0].set_xlim((xmin, xmax))
         plt.xlabel(xlabel)
         plt.ylabel(ylabel)
-        if usepostfit:
-            plt.title("Postfit Residuals (Number of TOAs: %d)" % TOAcount)
-        else:
-            plt.title("Prefit Residuals (Number of TOAs: %d)" % TOAcount)
         subplot += 1
 
     # Plot jump ranges
@@ -436,7 +437,13 @@ def plot_data(tempo_results, xkey, ykey, postfit=True, prefit=False,
     leg = plt.figlegend(handles, labels, 'upper right')
     leg.set_visible(show_legend)
     leg.legendPatch.set_alpha(0.5)
-    plt.subplots_adjust(right=0.8)
+    axes[0].xaxis.tick_top()
+    plt.setp(axes[0].get_yticklabels()[0], visible=False)
+    plt.setp(axes[1].get_yticklabels()[-1], visible=False)
+    plt.setp(axes[0].get_yticklabels()[-1], visible=False)
+    plt.setp(axes[1].get_yticklabels()[0], visible=False)
+    plt.subplots_adjust(wspace=0.05, hspace = 0.0, left=0.15, bottom=0.1, right=0.8, top=0.9)
+
 
 
     nms=[]
@@ -452,6 +459,7 @@ def plot_data(tempo_results, xkey, ykey, postfit=True, prefit=False,
     options.fitcheck = CheckButtons(rax, nms, fitmes)
     options.fitcheck.on_clicked(update_fit_flag)
     redrawplot()
+
 
 def update_fit_flag(label, button):
     if button=='left':
