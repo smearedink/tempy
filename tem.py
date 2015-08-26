@@ -6,9 +6,7 @@
 import optparse
 import sys
 import re
-import os
 import types
-import warnings
 import subprocess
 from shutil import copyfile
 
@@ -22,8 +20,6 @@ import pyslalib.slalib as slalib
 import binary_psr
 import parfile as par
 import residuals
-
-from scipy.cluster.vq import kmeans2
 
 from tempy_utils import un2str, find_freq_clusters, colors
 from tempy_utils import CheckButtons
