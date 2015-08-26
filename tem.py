@@ -815,9 +815,21 @@ def keypress(event):
                     event.canvas.toolbar.zoom()
             options.jump_mode = not options.jump_mode
             if options.jump_mode:
-                print "Jump edit mode on"
+                jtext= "Jump edit mode on"
+                print jtext
+                plt.figtext(0.5, 0.95, jtext, \
+                    horizontalalignment='center', \
+                    verticalalignment='center', \
+                    bbox=dict(facecolor='yellow', ec='w', alpha=1))
+                redrawplot()
             else:
-                print "Jump edit mode off"
+                jtext=  "Jump edit mode off"
+                print jtext
+                plt.figtext(0.5, 0.95, jtext, \
+                    horizontalalignment='center', \
+                    verticalalignment='center', \
+                    bbox=dict(facecolor='white',ec='white', alpha=1))
+                redrawplot()
             for k in options.jump_spans:
                 options.jump_spans[k].visible = not options.jump_spans[k].visible
         elif event.key.lower() == 'x':
@@ -968,6 +980,11 @@ def main():
 
     create_plot()
     reloadplot()
+    jtext=  "Jump edit mode off"
+    plt.figtext(0.5, 0.95, jtext, \
+        horizontalalignment='center', \
+        verticalalignment='center', \
+        bbox=dict(facecolor='white',ec='white', alpha=1))
 
     if options.interactive:
         fig = plt.gcf() # current figure
