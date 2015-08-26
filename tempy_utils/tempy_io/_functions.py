@@ -1,5 +1,5 @@
 from collections import OrderedDict
-from settings import string_pars
+from _settings import string_pars
 
 # Only used by functions here, so defined here rather than in classes.py
 class Par:

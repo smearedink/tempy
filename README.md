@@ -12,4 +12,7 @@ Or if you've already run TEMPO in the directory and don't want to run it again, 
 * Select parameters to include in next fit
 * Step back through fit history
 
+### What tempy is not good at (at least now)
+* Handling JUMPs that overlap in time, such as overlapping observations from different observatories that need to be jumped relative to one another
+
 ![tempy screenshot](http://www.hep.physics.mcgill.ca/~madsense/tempy_screenshot.png "tempy screenshot")

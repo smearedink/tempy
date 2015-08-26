@@ -1,4 +1,5 @@
 import numpy as _np
+from scipy.cluster.vq import kmeans2
 
 def find_freq_clusters(freqs):
     # first make a histogram
