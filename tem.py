@@ -1,14 +1,12 @@
 #!/usr/bin/env python
 
 # Copied from Patrick Lazarus's pyplotres 2015 Aug 18,
-# then mangled by Erik Madsen into its present form
+# then mangled by Erik Madsen (et al.) into its present form
 
 import optparse
 import sys
 import re
-import os
 import types
-import warnings
 import subprocess
 from shutil import copyfile
 
@@ -23,10 +21,10 @@ import binary_psr
 import parfile as par
 import residuals
 
-from scipy.cluster.vq import kmeans2
-
-import tempy_io
-from check_buttons import CheckButtons
+from tempy_utils import un2str, find_freq_clusters, colors
+from tempy_utils import CheckButtons
+from tempy_utils import tempy_io
+from tempy_utils.tempo_info import TempoHistory
 
 # Available x-axis types
 xvals = ['mjd', 'year', 'numtoa', 'orbitphase']
@@ -35,50 +33,6 @@ xind = 0
 yvals = ['phase', 'usec', 'sec']
 yind = 0
 
-colors = {1: ['#000000'], # black
-          2: ['#ff0000', '#0000ff'], # red blue
-          3: ['#ff0000', '#008000', '#0000ff'], # red green blue
-          4: ['#ff0000', '#FFA500', '#008000', '#0000ff'], # red orange green blue
-          # red orange green blue violet
-          5: ['#ff0000', '#FFA500', '#008000', '#0000ff', '#EE82EE'],
-          # red orange green blue indigo violet
-          6: ['#ff0000', '#FFA500', '#008000', '#0000ff', '#4B0082', '#EE82EE'],
-          # red orange yellow green blue indigo violet
-          7: ['#ff0000', '#FFA500', '#FFFF00', '#008000', '#0000ff', '#4B0082', '#EE82EE'],
-          # red orange yellow green blue indigo violet black
-          8: ['#ff0000', '#FFA500', '#FFFF00', '#008000', '#0000ff', '#4B0082', '#EE82EE', '#000000']}
-
-
-def find_freq_clusters(freqs):
-    # first make a histogram
-    minf, maxf = freqs.min(), freqs.max()
-    maxbins = 8  # related to the max colors defined...
-    df = 4.0 # MHz
-    if ((maxf - minf) < df):  # Only a single freq to our resolution
-        return [[0.0, 'inf']]
-    numbins = int((maxf - minf) / df) + 2
-    lobound = minf - 0.5 * df
-    hibound = lobound + numbins * df
-    hist, edges = np.histogram(freqs, numbins, [lobound, hibound])
-    # Now choose the maxbins biggest bins where there are TOAs
-    hibins = hist.argsort()[::-1]
-    hibins = hibins[hist[hibins] > 0]
-    if len(hibins) > maxbins:
-        hibins = hibins[:maxbins]
-    ctrs = edges[hibins] + 0.5 * df
-    ctrs.sort()
-    # and use these as starting points for kmeans
-    kmeans, indices = kmeans2(freqs, ctrs)
-    if len(kmeans)==1:
-        return [[0.0, 'inf']]
-    elif len(kmeans)==2:
-        return [[0.0, kmeans.mean()], [kmeans.mean(), 'inf']]
-    else:
-        freqbands = [[0.0, kmeans[0:2].mean()]]
-        for ii in range(len(kmeans)-2):
-            freqbands.append([kmeans[ii:ii+2].mean(), kmeans[ii+1:ii+3].mean()])
-        freqbands.append([kmeans[-2:].mean(), 'inf'])
-        return freqbands
 
 class TempoResults:
     def __init__(self, freqbands):
@@ -262,6 +216,10 @@ class Resids:
             'postfit' is a boolean argument that determines if
             postfit, or prefit data is to be returned.
         """
+        if postfit==True:
+            prefix='Postfit '
+        if postfit==False:
+            prefix='Prefit '
         if not isinstance(key, types.StringType):
             raise ValueError("key must be of type string.")
         yopt = key.lower()
@@ -272,15 +230,15 @@ class Resids:
                 # NOTE: Should use P at TOA not at PEPOCH
                 #
                 yerror = self.uncertainty/self.outpar.P0
-                ylabel = "Residuals (Phase)"
+                ylabel = prefix+"Residuals (Phase)"
             elif yopt == 'usec':
                 ydata = self.postfit_sec*1e6
                 yerror = self.uncertainty*1e6
-                ylabel = "Residuals (uSeconds)"
+                ylabel = prefix+"Residuals (uSeconds)"
             elif yopt == 'sec':
                 ydata = self.postfit_sec.copy()
                 yerror = self.uncertainty.copy()
-                ylabel = "Residuals (Seconds)"
+                ylabel = prefix+"Residuals (Seconds)"
             else:
                 raise ValueError("Unknown yaxis type (%s)." % yopt)
         else:
@@ -290,15 +248,15 @@ class Resids:
                 # NOTE: Should use P at TOA not at PEPOCH
                 #
                 yerror = self.uncertainty/self.inpar.P0
-                ylabel = "Residuals (Phase)"
+                ylabel = prefix+"Residuals (Phase)"
             elif yopt=='usec':
                 ydata = self.prefit_sec*1e6
                 yerror = self.uncertainty*1e6
-                ylabel = "Residuals (uSeconds)"
+                ylabel = prefix+"Residuals (uSeconds)"
             elif yopt=='sec':
                 ydata = self.prefit_sec.copy()
                 yerror = self.uncertainty.copy()
-                ylabel = "Residuals (Seconds)"
+                ylabel = prefix+"Residuals (Seconds)"
             else:
                 raise ValueError("Unknown yaxis type (%s)." % yopt)
 
@@ -317,21 +275,11 @@ class Resids:
         return (ylabel, ydata, yerror)
 
 
-def plot_data(tempo_results, xkey, ykey, postfit=True, prefit=False,
+
+def plot_data(tempo_results, xkey, ykey,
               interactive=True, mark_peri=False, show_legend=True):
-    # figure out what should be plotted
-    # True means to plot postfit
-    # False means to plot prefit
-    if postfit and prefit:
-        to_plot_postfit = [False, True]
-    elif postfit and not prefit:
-        to_plot_postfit = [True]
-    elif not postfit and prefit:
-        to_plot_postfit = [False]
-    else:
-        raise EmptyPlotValueError("At least one of prefit and postfit must be True.")
     subplot = 1
-    numsubplots = len(to_plot_postfit)
+    numsubplots = 2
     global axes
     axes = []
     global ax_types
@@ -343,7 +291,7 @@ def plot_data(tempo_results, xkey, ykey, postfit=True, prefit=False,
     handles = []
     labels = []
 
-    for usepostfit in to_plot_postfit:
+    for usepostfit in [False, True]:# Always use pre, then post
         TOAcount = 0
         # All subplots are in a single column
         if subplot == 1:
@@ -449,10 +397,6 @@ def plot_data(tempo_results, xkey, ykey, postfit=True, prefit=False,
             axes[0].set_xlim((xmin, xmax))
         plt.xlabel(xlabel)
         plt.ylabel(ylabel)
-        if usepostfit:
-            plt.title("Postfit Residuals (Number of TOAs: %d)" % TOAcount)
-        else:
-            plt.title("Prefit Residuals (Number of TOAs: %d)" % TOAcount)
         subplot += 1
 
     # Plot jump ranges
@@ -478,7 +422,13 @@ def plot_data(tempo_results, xkey, ykey, postfit=True, prefit=False,
     leg = plt.figlegend(handles, labels, 'upper right')
     leg.set_visible(show_legend)
     leg.legendPatch.set_alpha(0.5)
-    plt.subplots_adjust(right=0.8)
+    axes[0].xaxis.tick_top()
+    plt.setp(axes[0].get_yticklabels()[0], visible=False)
+    plt.setp(axes[1].get_yticklabels()[-1], visible=False)
+    plt.setp(axes[0].get_yticklabels()[-1], visible=False)
+    plt.setp(axes[1].get_yticklabels()[0], visible=False)
+    plt.subplots_adjust(wspace=0.05, hspace = 0.0, left=0.15, bottom=0.1, right=0.8, top=0.9)
+
 
 
     nms=[]
@@ -494,6 +444,7 @@ def plot_data(tempo_results, xkey, ykey, postfit=True, prefit=False,
     options.fitcheck = CheckButtons(rax, nms, fitmes)
     options.fitcheck.on_clicked(update_fit_flag)
     redrawplot()
+
 
 def update_fit_flag(label, button):
     if button=='left':
@@ -512,46 +463,7 @@ def update_fit_flag(label, button):
             tempo_history.get_parfile()[label].value=np.float(newvalue)
 
 
-### This un2str code is taken near-verbatim from Lemming's reply at
-### http://stackoverflow.com/questions/6671053/python-pretty-print-errorbars
-def un2str(x, xe, precision=1):
-    """pretty print nominal value and uncertainty
 
-    x  - nominal value
-    xe - uncertainty
-    precision - number of significant digits in uncertainty
-
-    returns shortest string representation of `x +- xe` either as
-        x.xx(ee)e+xx
-    or as
-        xxx.xx(ee)"""
-    # base 10 exponents
-    x_exp = int(np.floor(np.log10(abs(x))))
-    xe_exp = int(np.floor(np.log10(xe)))
-
-    # uncertainty
-    un_exp = xe_exp-precision+1
-    un_int = round(xe*10**(-un_exp))
-
-    # nominal value
-    no_exp = un_exp
-    no_int = round(x*10**(-no_exp))
-
-    # format - nom(unc)exp
-    fieldw = x_exp - no_exp
-    fmt = '%%.%df' % fieldw
-    result1 = (fmt + '(%.0f)e%d') % (no_int*10**(-fieldw), un_int, x_exp)
-
-    # format - nom(unc)
-    fieldw = max(0, -no_exp)
-    fmt = '%%.%df' % fieldw
-    result2 = (fmt + '(%.0f)') % (no_int*10**no_exp, un_int*10**max(0, un_exp))
-
-    # return shortest representation
-    if len(result2) <= len(result1):
-        return result2
-    else:
-        return result1
 
 def create_plot():
     # Set up the plot
@@ -588,17 +500,10 @@ def reloadplot(with_tempo_results=None):
         tempo_results = with_tempo_results
     try:
         plot_data(tempo_results, options.xaxis, options.yaxis,
-                  postfit=options.postfit, prefit=options.prefit,
                   interactive=options.interactive,
                   mark_peri=options.mark_peri, show_legend=options.legend)
     except EmptyPlotValueError, msg:
         print msg
-        print "Press 'p'/'P' to add prefit/postfit plot."
-        plt.figtext(0.5, 0.5, (str(msg) + "\n" + \
-                        "Press 'p'/'P' to add prefit/postfit plot."), \
-                    horizontalalignment='center', \
-                    verticalalignment='center', \
-                    bbox=dict(facecolor='white', alpha=0.75))
     fig.set_visible(True)
     redrawplot()
 
@@ -616,19 +521,19 @@ def pick(event):
     global tempo_results
     global options
     global ax_jump_ranges
-    if event.mouseevent.button == 1:
-        index = event.ind
-        axes = event.mouseevent.inaxes
-        if axes:
-            title = axes.get_title()
-            postfit = ("Postfit" in title)
-        if len(index) == 1:
-            freq_label = event.artist.get_label()
-            info = tempo_results.get_info(freq_label, index, postfit)
-            print_text(info)
-        else:
-            print "Multiple TOAs selected. Zoom in and try again."
-    elif event.mouseevent.button == 3:
+#    if event.mouseevent.button == 1:
+#        index = event.ind
+#        axes = event.mouseevent.inaxes
+#        if axes:
+#            title = axes.get_title()
+#            postfit = ("Postfit" in title)
+#        if len(index) == 1:
+#            freq_label = event.artist.get_label()
+#            info = tempo_results.get_info(freq_label, index, postfit)
+#            print_text(info)
+#        else:
+#            print "Multiple TOAs selected. Zoom in and try again."
+    if event.mouseevent.button == 3:
         if options.jump_mode:
             for ax in ax_jump_ranges:
                 if event.artist in ax:
@@ -654,8 +559,6 @@ def print_help():
     print "\tq - Quit"
     print "\ts - Save current plot(s) to PostScript file"
     print "\tc - Try to determine optimal color pallete"
-    print "\tp - Toggle prefit display on/off"
-    print "\tP - Toggle postfit display on/off"
     print "\tz - Toggle Zoom-mode on/off"
     print "\tm - Toggle marking of periastron passages on/off"
     print "\tL - Toggle legend on/off"
@@ -664,15 +567,13 @@ def print_help():
     print "\t+ - Insert positive phase wrap at cursor position"
     print "\t- - Insert negative phase wrap at cursor position"
     print "\t[Backspace] - Remove all phase wraps"
-    print "\tT - Run Tempo with current postfit parameters and phase wraps"
+    print "\tx - Run Tempo with current postfit parameters and phase wraps"
     print "\tb - Return to previous Tempo solution"
     print "\tn - Go to next Tempo solution"
     print "\td - Dump current Tempo solution to new par/tim files"
     print "\tu - Go to original view (unzoom)"
     print "\t< - Go to previous view"
     print "\t> - Go to next view"
-    print "\tx - Set x-axis limits (terminal input required)"
-    print "\ty - Sey y-axis limits (terminal input required)"
     print "\tr - Reload residuals"
     print "\tt - Cycle through y-axis types ('phase', 'usec', 'sec')"
     print "\t[Space] - Cycle through x-axis types ('mjd', 'year', 'numtoa',\n"\
@@ -710,131 +611,6 @@ def run_tempo():
         new_timfn = tempo_results.intimfn + ".tempy"
     tim.to_tim_file(new_timfn)
     subprocess.call(["tempo", "-f", new_par, new_timfn])
-
-class TempoHistory:
-    def __init__(self, tempo_results=None):
-        self.current_index = -1
-        # parfiles are currently stored simply as raw strings
-        self.inpars = []
-        self.outpars = []
-        # timfiles are TOAset objects
-        self.timfiles = []
-        self.tempo_results = []
-        if tempo_results is not None:
-            self.append(tempo_results)
-
-    def get_nsolutions(self):
-        return len(self.tempo_results)
-
-    def seek_next_solution(self):
-        new_index = self.current_index + 1
-        if new_index < self.get_nsolutions():
-            self.current_index = new_index
-            print "Moving ahead to solution %d of %d" % (new_index + 1,
-                                                         self.get_nsolutions())
-        else:
-            print "Already at solution %d of %d" % (self.get_nsolutions(),
-                                                    self.get_nsolutions())
-
-    def seek_prev_solution(self):
-        new_index = self.current_index - 1
-        if new_index >= 0 and self.get_nsolutions():
-            self.current_index = new_index
-            print "Moving back to solution %d of %d" % (new_index + 1,
-                                                        self.get_nsolutions())
-        else:
-            print "Already at solution 1 of %d" % (self.get_nsolutions())
-
-    def seek_first_solution(self):
-        if self.get_nsolutions():
-            self.current_index = 0
-
-    def seek_solution(self, n):
-        if n >= 0 and n < self.get_nsolutions():
-            self.current_index = n
-
-    def clear_future_history(self):
-        end = self.current_index + 1
-        self.inpars = self.inpars[:end]
-        self.outpars = self.outpars[:end]
-        self.timfiles = self.timfiles[:end]
-        self.tempo_results = self.tempo_results[:end]
-
-    def append(self, tempo_results, increment_current=True):
-        self.clear_future_history()
-        with open(tempo_results.inparfn, 'r') as f:
-            inpar = f.readlines()
-            self.inpars.append(inpar)
-        #with open(tempo_results.outparfn, 'r') as f:
-        #    outpar = f.readlines()
-        #    self.outpars.append(outpar)
-        self.outpars.append(tempy_io.read_parfile(tempo_results.outpar.FILE))
-        timfile = tempy_io.TOAset.from_tim_file(tempo_results.intimfn)
-        self.timfiles.append(timfile)
-        self.tempo_results.append(tempo_results)
-        if increment_current:
-            self.current_index += 1
-
-    def get_tempo_results(self, index=None):
-        if index is None:
-            index = self.current_index
-        return self.tempo_results[index]
-
-    def set_tempo_results(self, tempo_results, index=None):
-        if index is None:
-            index = self.current_index
-        self.tempo_results[index] = tempo_results
-
-    def get_parfile(self, index=None):
-        if index is None:
-            index = self.current_index
-        return self.outpars[index]
-
-    def save_inpar(self, fname):
-        with open(fname, 'w') as f:
-            f.writelines(self.inpars[self.current_index])
-        print "Wrote input parfile %s" % fname
-
-    def save_outpar(self, fname):
-        #with open(fname, 'w') as f:
-        #    f.writelines(self.outpars[self.current_index])
-        tempy_io.write_parfile(self.outpars[self.current_index], fname)
-        print "Wrote output parfile %s" % fname
-
-    def save_timfile(self, fname):
-        self.timfiles[self.current_index].to_tim_file(fname)
-        print "Wrote tim file %s" % fname
-
-    def print_formatted_pars(self, index=None):
-        if index is None:
-            index = self.current_index
-        no_disp_pars = list(tempy_io.no_fit_pars)
-        for par in ['START', 'FINISH', 'PEPOCH']:
-            if par in no_disp_pars:
-                no_disp_pars.remove(par)
-        formatted_par_line = "%20s: %1s %-18s"
-        output_par = self.get_parfile(index)
-        for par in output_par:
-            if par not in no_disp_pars:
-                if output_par[par].fit:
-                    fit_str = '*'
-                else:
-                    fit_str = ''
-                if output_par[par].error is None:
-                    val = "%s" % output_par[par].value
-                else:
-                    if par == 'RAJ' or par == 'DECJ':
-                        split_str = output_par[par].value.split(':')
-                        split_str[-1] = un2str(float(split_str[-1]),
-                                               output_par[par].error)
-                        val = ''
-                        for item in split_str:
-                            val += item + ":"
-                        val = val[:-1]
-                    else:
-                        val = un2str(output_par[par].value,
-                                     output_par[par].error)
-                print formatted_par_line % (par, fit_str, val)
 
 
 def increment_phase_wrap(xdata, phase_offset):
@@ -1044,7 +820,7 @@ def keypress(event):
                 print "Jump edit mode off"
             for k in options.jump_spans:
                 options.jump_spans[k].visible = not options.jump_spans[k].visible
-        elif event.key == 'T':
+        elif event.key.lower() == 'x':
             run_tempo()
             tempo_results = TempoResults(options.freqbands)
             tempo_history.append(tempo_results)
@@ -1093,58 +869,11 @@ def keypress(event):
             print "Toggling plot type...[%s]"%xvals[xind], xind
             options.xaxis = xvals[xind]
             reloadplot(tempo_results)
-        elif event.key == 't':
+        elif event.key.lower() == 't':
             yind = (yind + 1) % len(yvals)
             print "Toggling plot scale...[%s]"%yvals[yind], yind
             options.yaxis = yvals[yind]
             reloadplot(tempo_results)
-        elif event.key == 'p':
-            options.prefit = not options.prefit
-            print "Toggling prefit-residuals display to: %s" % \
-                    ((options.prefit and "ON") or "OFF")
-            reloadplot(tempo_results)
-        elif event.key == 'P':
-            options.postfit = not options.postfit
-            print "Toggling postfit-residuals display to: %s" % \
-                    ((options.postfit and "ON") or "OFF")
-            reloadplot(tempo_results)
-        elif event.key.lower() == 'x':
-            # Set x-axis limits
-            print "Setting x-axis limits. User input required..."
-            xmin = raw_input("X-axis minimum: ")
-            xmax = raw_input("X-axis maximum: ")
-            try:
-                xmin = float(xmin)
-                xmax = float(xmax)
-                if xmax <= xmin:
-                    raise ValueError
-            except ValueError:
-                print "Bad values provided!"
-                return
-            plt.xlim(xmin, xmax)
-        elif event.key.lower() == 'y':
-            global axes
-            # Set y-axis limits
-            print "Setting y-axis limits. User input required..."
-            if len(axes) == 2:
-                axes_to_adjust = raw_input("Axes to adjust (pre/post): ")
-                if axes_to_adjust.lower().startswith('pre'):
-                    plt.axes(axes[0])
-                elif axes_to_adjust.lower().startswith('post'):
-                    plt.axes(axes[1])
-                else:
-                    raise ValueError
-            ymin = raw_input("Y-axis minimum: ")
-            ymax = raw_input("Y-axis maximum: ")
-            try:
-                ymin = float(ymin)
-                ymax = float(ymax)
-                if ymax <= ymin:
-                    raise ValueError
-            except ValueError:
-                print "Bad values provided!"
-                return
-            plt.ylim(ymin, ymax)
         elif event.key.lower() == 'h':
             print_help()
 
