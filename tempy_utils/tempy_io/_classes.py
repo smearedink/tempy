@@ -119,7 +119,27 @@ class TOA:
         # TODO: needs to have spacing fixed
         return " %8s %s %8.3f %8.3f %9.4f   " % \
           (self.label, toa, self.err, self.freq, self.dm_corr) + self.obs
+    
+    @classmethod
+    def from_Tempo2_format(cls, toa_str):
+        split_toa_str = toa_str.split()[1:]
+        if (len(split_toa_str) == 5) and (len(split_toa_str[-1]) == 1):
+            split_toa_str = split_toa_str[1:]
+        freq = float(split_toa_str[0])
+        mjd_str = split_toa_str[1].split('.')
+        MJDi = int(mjd_str[0])
+        MJDf = float('.' + mjd_str[1])
+        err = float(split_toa_str[2])
+        obs = split_toa_str[3]
+        dm_corr = None
+        phase_offset = None
+        return cls(MJDi, MJDf, err, freq, obs, dm_corr, '', phase_offset)
 
+    def to_Tempo2_format(self):
+        toa = "%5d"%int(self.MJD.mjd) + ("%.13f" % (self.MJD.jd2 % 1))[1:]
+        return " NOT %8.3f %s %8.3f " % \
+          (self.freq, toa, self.err)+self.obs
+        
 
 class TOAset:
     """
@@ -177,6 +197,7 @@ class TOAset:
         phase_wraps = {}
         mode = None
         track = None
+        default_format = 'princeton'
         with open(fname, 'r') as f:
             for line in f.readlines():
                 if line[0].upper() != 'C':
@@ -194,22 +215,28 @@ class TOAset:
                     elif line.strip()[:5] == "PHASE":
                         phase_wrap = int(line.strip()[5:])
                         phase_wraps[len(TOAs)] = phase_wrap
-                    elif len(line.strip()) >= 50:
-                        err_str = "Unsupported file format. Format must be " \
-                                  "princeton, parkes, or ITOA."
-                        try:
-                            TOAs.append(TOA.from_princeton_format(line))
-                            default_format = 'princeton'
-                        except:
+                    elif line.strip()[:6] == "FORMAT":
+                        default_format = 'Tempo2'
+                    elif len(line) >= 20: #no reason for 20. Its just a random limit.
+                        if (default_format == 'Tempo2'):
+                                TOAs.append(TOA.from_Tempo2_format(line))    
+                                default_format = 'Tempo2'
+                        else:
+                            err_str = "Unsupported file format. Format must be " \
+                                      "princeton, parkes, or ITOA."
                             try:
-                                TOAs.append(TOA.from_parkes_format(line))
-                                default_format = 'parkes'
+                                TOAs.append(TOA.from_princeton_format(line))
+                                default_format = 'princeton'
                             except:
                                 try:
-                                    TOAs.append(TOA.from_ITOA_format(line))
-                                    default_format = 'ITOA'
+                                    TOAs.append(TOA.from_parkes_format(line))
+                                    default_format = 'parkes'
                                 except:
-                                    print err_str
+                                    try:
+                                        TOAs.append(TOA.from_ITOA_format(line))
+                                        default_format = 'ITOA'
+                                    except:
+                                        print err_str
         return cls(TOAs, jump_ranges, phase_wraps, mode, track, default_format)
 
     def get_TOAs_from_jump_range(self, index):
@@ -240,10 +267,13 @@ class TOAset:
         if toa_format is None:
             toa_format = self.default_format
         lines = []
-        if self.mode is not None:
-            lines.append("MODE %d" % self.mode)
-        if self.track is not None:
-            lines.append("TRACK %d" % self.track)
+        if toa_format.lower() == 'tempo2':
+            lines.append("FORMAT 1")
+        else:    
+            if self.mode is not None:
+                lines.append("MODE %d" % self.mode)
+            if self.track is not None:
+                lines.append("TRACK %d" % self.track)
         for ii in range(self.get_nTOAs()):
             if ii in self.phase_wraps:
                 if self.phase_wraps[ii] > 0:
@@ -259,6 +289,8 @@ class TOAset:
                 lines.append(self.TOAs[ii].to_ITOA_format())
             elif toa_format.lower() == 'princeton':
                 lines.append(self.TOAs[ii].to_princeton_format())
+            elif toa_format.lower() == 'tempo2':
+                lines.append(self.TOAs[ii].to_Tempo2_format())
             else:
                 print "TOA Format must be 'princeton', 'parkes', or 'ITOA'."
             if self.jump_statement_after(ii):
