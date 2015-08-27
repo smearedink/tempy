@@ -142,159 +142,184 @@ class TOA:
         
 
 class TOAset:
+    def __init__(self, list_of_TOAs=[], jumped=False):
+        self.TOAs = list(list_of_TOAs)
+        self.jumped = jumped
+
+    def append_TOA(self, toa):
+        self.TOAs.append(toa)
+
+    def get_nTOAs(self):
+        return len(self.TOAs)
+
+
+
+class TOAfile:
     """
-    A class representing a set of TOAs used for timing in TEMPO, typically
+    A class representing many TOAs used for timing in TEMPO, typically
     stored in and read from a .tim file.
-    A TOAset object contains the following information:
-      TOAs -------- List of TOAs in the order they appear in a .tim file
-      jump_ranges - List of tuples of the form (start, end) where
-                    'start' and 'end' are indices referring to sections of the
-                    'TOAs' list bracketed by TEMPO JUMP statements
-                    (TOAS[start:(stop+1)] would be the list of those bracketed)
-      phase_wraps - Dictionary where each key is an index in the 'TOAs' list
-                    before which a TEMPO PHASE statement occurs, and the value
-                    is the argument to the PHASE statement
-      mode -------- If set, the argument to a .tim file MODE statement
-      track ------- If set, the argument to a .ti file TRACK statement
-    Initialization:
-      (1) toa_set = TOAset(TOAs, jump_ranges, phase_wraps, mode, track)
-      (2) toa_set = TOAset.from_tim_file(fname)
-        fname is the path to a TEMPO .tim file
-    Methods:
-      get_TOAs_from_jump_range(index)
-        Returns a list of the TOAs from the jump range identified by the tuple
-        at position 'index' in the 'jump_ranges' list
-      jump_statement_before(index)
-        Returns 'True' if a JUMP statement appears before the TOA at index
-      jump_statement_after(index)
-        Returns 'True' if a JUMP statement appears after the TOA at index
-      get_nTOAs()
-        Returns the total number of TOAs in this TOAset
-      get_span()
-        Returns the total number of days spanned by this TOAset
-      to_princeton_file(fname)
-        If fname provided, outputs TOAset to a new .tim file in Princeton
-        format; otherwise, prints to screen in Princeton format
     """
-    def __init__(self, list_of_TOAs=[], jump_ranges=[], phase_wraps={},
-                 mode=None, track=None, default_format='princeton'):
-        self.TOAs = list_of_TOAs
-        self.jump_ranges = jump_ranges
+    def __init__(self, TOAsets=[], phase_wraps={}, mode=None, track=None,
+                 default_format='princeton'):
+        self.TOAsets = TOAsets
+        # phase_wraps keys are tuple (TOAsets index, TOAset.TOAs index)
+        # and values are phase wrap value (eg, -2)
         self.phase_wraps = phase_wraps
         self.mode = mode
         self.track = track
         self.default_format = default_format
 
-    def __repr__(self):
-        return "<TOAset: %d TOAs over %.1f days>" %\
-          (self.get_nTOAs(), self.get_span())
-
     @classmethod
     def from_tim_file(cls, fname):
-        TOAs = []
-        jump_ranges = []
+        TOAsets = [TOAset(jumped=False)]
+        TOAset_index = 0
         jump = False
         phase_wraps = {}
         mode = None
         track = None
-        default_format = 'princeton'
         with open(fname, 'r') as f:
             for line in f.readlines():
                 if line[0].upper() != 'C':
+                    use_Tempo2 = False
                     if line.strip() == "JUMP":
                         jump = not jump
-                        if jump:
-                            jump_ranges.append([len(TOAs), 0])
+                        if TOAsets[-1].get_nTOAs() == 0:
+                            TOAsets[-1].jumped = jump
                         else:
-                            jump_ranges[-1][1] = len(TOAs)-1
-                            jump_ranges[-1] = tuple(jump_ranges[-1])
+                            TOAsets.append(TOAset(jumped=jump))
+                            TOAset_index += 1
                     elif line.strip()[:4] == "MODE":
                         mode = int(line.split()[1])
                     elif line.strip()[:5] == "TRACK":
                         track = int(line.split()[1])
                     elif line.strip()[:5] == "PHASE":
                         phase_wrap = int(line.strip()[5:])
-                        phase_wraps[len(TOAs)] = phase_wrap
+                        phase_wraps[(TOAset_index, TOAsets[-1].get_nTOAs())] \
+                          = phase_wrap
                     elif line.strip()[:6] == "FORMAT":
-                        default_format = 'Tempo2'
-                    elif len(line) >= 20: #no reason for 20. Its just a random limit.
-                        if (default_format == 'Tempo2'):
-                                TOAs.append(TOA.from_Tempo2_format(line))    
-                                default_format = 'Tempo2'
+                        if line.split()[1] == "1":
+                            default_format = 'Tempo2'
+                            use_Tempo2 = True
+                    elif len(line) >= 20:
+                        err_str = "Unsupported file format. Format must be " \
+                                  "princeton, parkes, Tempo2, or ITOA."
+                        if use_Tempo2:
+                            TOAsets[-1].append_TOA(TOA.from_Tempo2_format(line))
                         else:
-                            err_str = "Unsupported file format. Format must be " \
-                                      "princeton, parkes, or ITOA."
                             try:
-                                TOAs.append(TOA.from_princeton_format(line))
+                                toa = TOA.from_princeton_format(line)
                                 default_format = 'princeton'
                             except:
                                 try:
-                                    TOAs.append(TOA.from_parkes_format(line))
+                                    toa = TOA.from_parkes_format(line)
                                     default_format = 'parkes'
                                 except:
                                     try:
-                                        TOAs.append(TOA.from_ITOA_format(line))
+                                        toa = TOA.from_ITOA_format(line)
                                         default_format = 'ITOA'
                                     except:
                                         print err_str
-        return cls(TOAs, jump_ranges, phase_wraps, mode, track, default_format)
+                                        exit(1)
+                            TOAsets[-1].append_TOA(toa)
+        return cls(TOAsets, phase_wraps, mode, track, default_format)
 
-    def get_TOAs_from_jump_range(self, index):
-        return self.TOAs[self.jump_ranges[index][0]:(self.jump_ranges[index][1]+1)]
+    def get_nTOAsets(self):
+        return len(self.TOAsets)
 
-    def jump_statement_before(self, index):
-        return index in [r[0] for r in self.jump_ranges]
+    def get_nTOAs(self, before_TOAset_index=None):
+        """
+        If before_TOAset_index is not None, this will return the number of TOAs
+        before that set.  Otherwise it returns the total number of TOAs.
+        """
+        if before_TOAset_index is None:
+            return sum([tset.get_nTOAs() for tset in self.TOAsets])
+        else:
+            return sum([tset.get_nTOAs() for tset in
+                       self.TOAsets[:before_TOAset_index]])
 
-    def jump_statement_after(self, index):
-        return index in [r[1] for r in self.jump_ranges]
+    def get_position_of_TOA(self, n):
+        TOAset_index = 1
+        while self.get_nTOAs(TOAset_index) < n:
+            TOAset_index += 1
+        return (TOAset_index-1, n-self.get_nTOAs(TOAset_index-1))
+        
 
-    def get_nTOAs(self):
-        return len(self.TOAs)
+    def get_jump_ranges(self):
+        jump_ranges = []
+        for TOAset_index in range(self.get_nTOAsets()):
+            if self.TOAsets[TOAset_index].jumped:
+                jstart = self.get_nTOAs(TOAset_index)
+                jend = jstart + self.TOAsets[TOAset_index].get_nTOAs()-1
+                jump_ranges.append((jstart,jend))
+        return jump_ranges
 
-    def get_span(self):
-        mjds = [t.MJD for t in self.TOAs]
-        first_mjd = min(mjds)
-        last_mjd = max(mjds)
-        return (last_mjd - first_mjd).jd
+    def rearrange_jumps(self, jump_ranges):
+        phase_wrap_indices = {}
+        for pw in self.phase_wraps:
+            pw_pos = self.get_nTOAs(pw[0]) + pw[1]
+            phase_wrap_indices[pw_pos] = self.phase_wraps[pw]
+
+        all_TOAs = []
+        for tset in self.TOAsets:
+            for toa in tset.TOAs:
+                all_TOAs.append(toa)
+
+        new_TOAsets = [TOAset(jumped=False)]
+        for ii,toa in enumerate(all_TOAs):
+            if any([r[0] == ii for r in jump_ranges]):
+                if new_TOAsets[-1].get_nTOAs():
+                    new_TOAsets.append(TOAset(jumped=True))
+                else:
+                    new_TOAsets[-1].jumped = True
+            new_TOAsets[-1].append_TOA(toa)
+            if any([r[1] == ii for r in jump_ranges]):
+                new_TOAsets.append(TOAset(jumped=False))
+        if new_TOAsets[-1].get_nTOAs():
+            self.TOAsets = new_TOAsets
+        else:
+            self.TOAsets = new_TOAsets[:-1]
+
+        self.phase_wraps = {}
+        for index in phase_wrap_indices:
+            self.phase_wraps[self.get_position_of_TOA(index)] = \
+              phase_wrap_indices[index]
 
     def to_tim_file(self, fname=None, toa_format=None):
         """
         If filename not provided, formatted TOAs are printed to screen.
 
-        toa_format should be 'princeton', 'parkes', or 'ITOA'--if left as None,
-        format will be self.default_format
+        toa_format should be 'princeton', 'parkes', 'Tempo2', or 'ITOA'--if left
+        as None, format will be self.default_format
         """
         if toa_format is None:
             toa_format = self.default_format
         lines = []
         if toa_format.lower() == 'tempo2':
             lines.append("FORMAT 1")
-        else:    
-            if self.mode is not None:
-                lines.append("MODE %d" % self.mode)
-            if self.track is not None:
-                lines.append("TRACK %d" % self.track)
-        for ii in range(self.get_nTOAs()):
-            if ii in self.phase_wraps:
-                if self.phase_wraps[ii] > 0:
-                    ph_arg = "+" + str(self.phase_wraps[ii])
+        if self.mode is not None:
+            lines.append("MODE %d" % self.mode)
+        if self.track is not None:
+            lines.append("TRACK %d" % self.track)
+        for ii in range(self.get_nTOAsets()):
+            if self.TOAsets[ii].jumped:
+                lines.append("JUMP")
+            for jj in range(self.TOAsets[ii].get_nTOAs()):
+                if (ii,jj) in self.phase_wraps:
+                    ph_arg = "%+d" % self.phase_wraps[(ii,jj)] 
+                    lines.append("PHASE %s" % ph_arg)
+                if toa_format.lower() == 'parkes':
+                    lines.append(self.TOAsets[ii].TOAs[jj].to_parkes_format())
+                elif toa_format.lower() == 'itoa':
+                    lines.append(self.TOAsets[ii].TOAs[jj].to_ITOA_format())
+                elif toa_format.lower() == 'princeton':
+                    lines.append(self.TOAsets[ii].TOAs[jj].to_princeton_format())
+                elif toa_format.lower() == 'tempo2':
+                    lines.append(self.TOAsets[ii].TOAs[jj].to_Tempo2_format())
                 else:
-                    ph_arg = str(self.phase_wraps[ii])
-                lines.append("PHASE %s" % ph_arg)
-            if self.jump_statement_before(ii):
+                    print "TOA Format must be 'princeton', 'parkes', 'Tempo2', or 'ITOA'."
+            if self.TOAsets[ii].jumped:
                 lines.append("JUMP")
-            if toa_format.lower() == 'parkes':
-                lines.append(self.TOAs[ii].to_parkes_format())
-            elif toa_format.lower() == 'itoa':
-                lines.append(self.TOAs[ii].to_ITOA_format())
-            elif toa_format.lower() == 'princeton':
-                lines.append(self.TOAs[ii].to_princeton_format())
-            elif toa_format.lower() == 'tempo2':
-                lines.append(self.TOAs[ii].to_Tempo2_format())
-            else:
-                print "TOA Format must be 'princeton', 'parkes', or 'ITOA'."
-            if self.jump_statement_after(ii):
-                lines.append("JUMP")
+
         if fname is None:
             for line in lines:
                 print line

@@ -60,24 +60,22 @@ class TempoResults:
         tempolisfile.close()
 
         self.phase_wraps = {}
-        self.jump_ranges = []
+        #self.jump_ranges = []
 
-        tim = tempy_io.TOAset.from_tim_file(intimfn)
-        tim_ordered_index = np.argsort(tim.TOAs)
+        tim = tempy_io.TOAfile.from_tim_file(intimfn)
+        #tim_ordered_index = np.argsort(tim.TOAs)
 
         # if there are phase wraps in the tim file, we want to include those
         # in the intial plot
-        for tim_wrap_index in tim.phase_wraps:
-            wrap_index = tim_ordered_index[tim_wrap_index]
+        for tim_wrap_pos in tim.phase_wraps:
+            #wrap_index = tim_ordered_index[tim_wrap_index]
+            wrap_index = tim.get_nTOAs(tim_wrap_pos[0]) + tim_wrap_pos[1]
             self.phase_wraps[wrap_index] = \
-              tim.phase_wraps[tim_wrap_index]
+              tim.phase_wraps[tim_wrap_pos]
 
         # if there are jumps in the tim file, we want to include those in the
         # initial plot
-        for tim_jstart,tim_jend in tim.jump_ranges:
-            jstart = tim_ordered_index[tim_jstart]
-            jend = tim_ordered_index[tim_jend]
-            self.jump_ranges.append((jstart, jend))
+        self.jump_ranges = tim.get_jump_ranges()
 
         # Record filename
         self.inparfn = inparfn
@@ -592,19 +590,22 @@ def run_tempo():
     else:
         new_par = par_fname + '.tempy'
     copyfile(tempo_results.outpar.FILE, new_par)
-    tim = tempy_io.TOAset.from_tim_file(tempo_results.intimfn)
+    tim = tempy_io.TOAfile.from_tim_file(tempo_results.intimfn)
     tim.phase_wraps = {}
-    tim.jump_ranges = []
+    #tim.jump_ranges = []
     tempy_io.write_parfile(tempo_history.get_parfile(), new_par)
 
-    tim_ordered_index = np.argsort(tim.TOAs)
+    #tim_ordered_index = np.argsort(tim.TOAs)
     for wrap_index in tempo_results.phase_wraps:
-        tim_wrap_index = np.where(tim_ordered_index == wrap_index)[0][0]
-        tim.phase_wraps[tim_wrap_index] = tempo_results.phase_wraps[wrap_index]
-    for jstart,jend in tempo_results.jump_ranges:
-        tim_jstart = np.where(tim_ordered_index == jstart)[0][0]
-        tim_jend = np.where(tim_ordered_index == jend)[0][0]
-        tim.jump_ranges.append((tim_jstart,tim_jend))
+        #tim_wrap_index = np.where(tim_ordered_index == wrap_index)[0][0]
+        #tim.phase_wraps[tim_wrap_index] = tempo_results.phase_wraps[wrap_index]
+        tim.phase_wraps[tim.get_position_of_TOA(wrap_index)] = \
+          tempo_results.phase_wraps[wrap_index]
+    #for jstart,jend in tempo_results.jump_ranges:
+    #    tim_jstart = np.where(tim_ordered_index == jstart)[0][0]
+    #    tim_jend = np.where(tim_ordered_index == jend)[0][0]
+    #    tim.jump_ranges.append((tim_jstart,tim_jend))
+    tim.rearrange_jumps(tempo_results.jump_ranges)
     if tempo_results.intimfn.split('.')[-1] == 'tempy':
         new_timfn = tempo_results.intimfn
     else:

@@ -7,7 +7,7 @@ class TempoHistory:
         # parfiles are currently stored simply as raw strings
         self.inpars = []
         self.outpars = []
-        # timfiles are TOAset objects
+        # timfiles are TOAfile objects
         self.timfiles = []
         self.tempo_results = []
         if tempo_results is not None:
@@ -59,7 +59,7 @@ class TempoHistory:
         #    outpar = f.readlines()
         #    self.outpars.append(outpar)
         self.outpars.append(tempy_io.read_parfile(tempo_results.outpar.FILE))
-        timfile = tempy_io.TOAset.from_tim_file(tempo_results.intimfn)
+        timfile = tempy_io.TOAfile.from_tim_file(tempo_results.intimfn)
         self.timfiles.append(timfile)
         self.tempo_results.append(tempo_results)
         if increment_current:
