@@ -502,6 +502,22 @@ def reloadplot(with_tempo_results=None):
                   mark_peri=options.mark_peri, show_legend=options.legend)
     except EmptyPlotValueError, msg:
         print msg
+    if options.jump_mode:
+        jtext= "Jump edit mode on"
+        print jtext
+        plt.figtext(0.5, 0.95, jtext, \
+            horizontalalignment='center', \
+            verticalalignment='center', \
+            bbox=dict(facecolor='yellow', ec='w', alpha=1))
+        redrawplot()
+    else:
+        jtext=  "Jump edit mode off"
+        print jtext
+        plt.figtext(0.5, 0.95, jtext, \
+            horizontalalignment='center', \
+            verticalalignment='center', \
+            bbox=dict(facecolor='white',ec='white', alpha=1))
+        redrawplot()
     fig.set_visible(True)
     redrawplot()
 
