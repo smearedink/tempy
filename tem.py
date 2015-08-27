@@ -75,7 +75,8 @@ class TempoResults:
 
         # if there are jumps in the tim file, we want to include those in the
         # initial plot
-        self.jump_ranges = tim.get_jump_ranges()
+        self.toa_jump_ranges = tim.get_jump_ranges()
+        self.ordered_jump_ranges = tim.get_jump_ranges(chronological=True)
 
         # Record filename
         self.inparfn = inparfn
@@ -92,8 +93,9 @@ class TempoResults:
         self.max_TOA = r.bary_TOA.max()
         self.min_TOA = r.bary_TOA.min()
 
-        ordered_index = np.argsort(r.bary_TOA)
-        self.ordered_MJDs = r.bary_TOA[ordered_index]
+        self.ordered_index = np.argsort(r.bary_TOA)
+        self.ordered_MJDs = r.bary_TOA[self.ordered_index]
+        timfile_index = np.arange(r.numTOAs)
 
         if freqbands is None:
             self.freqbands = find_freq_clusters(r.bary_freq)
@@ -104,8 +106,8 @@ class TempoResults:
             indices = (r.bary_freq>=lo) & (r.bary_freq<hi)
             self.residuals[get_freq_label(lo, hi)] = \
                  Resids(r.bary_TOA[indices], r.bary_freq[indices],
-                        #np.arange(r.numTOAs)[indices],
-                        ordered_index[indices],
+                        np.arange(r.numTOAs)[indices],
+                        #ordered_index[indices],
                         r.orbit_phs[indices],
                         r.postfit_phs[indices], r.postfit_sec[indices],
                         r.prefit_phs[indices], r.prefit_sec[indices],
@@ -398,7 +400,7 @@ def plot_data(tempo_results, xkey, ykey,
         subplot += 1
 
     # Plot jump ranges
-    for jstart,jend in tempo_results.jump_ranges:
+    for jstart,jend in tempo_results.ordered_jump_ranges:
         plot_jump_range((jstart,jend))
 #        axes[-1].set_ylim((ymin, ymax))
 
@@ -621,7 +623,7 @@ def run_tempo():
     #    tim_jstart = np.where(tim_ordered_index == jstart)[0][0]
     #    tim_jend = np.where(tim_ordered_index == jend)[0][0]
     #    tim.jump_ranges.append((tim_jstart,tim_jend))
-    tim.rearrange_jumps(tempo_results.jump_ranges)
+    tim.rearrange_jumps(tempo_results.toa_jump_ranges)
     if tempo_results.intimfn.split('.')[-1] == 'tempy':
         new_timfn = tempo_results.intimfn
     else:
@@ -658,7 +660,7 @@ def is_in_jump_range(index):
     this index is not in a jump range
     """
     global tempo_results
-    for ii,(jstart,jend) in enumerate(tempo_results.jump_ranges):
+    for ii,(jstart,jend) in enumerate(tempo_results.ordered_jump_ranges):
         if index >= jstart and index <= jend:
             return ii
     return None
@@ -670,7 +672,7 @@ def jump_ranges_between(index1, index2):
     """
     global tempo_results
     which_jump_ranges = []
-    for ii,(jstart,jend) in enumerate(tempo_results.jump_ranges):
+    for ii,(jstart,jend) in enumerate(tempo_results.ordered_jump_ranges):
         if (jend >= index1 and jend <= index2) or \
           (jstart <= index2 and jstart >= index1):
             which_jump_ranges.append(ii)
@@ -703,7 +705,8 @@ def select_jump_range(xdata_min, xdata_max):
     for ii in reversed(sorted(which_jump_ranges)):
         #del tempo_results.jump_ranges[ii]
         delete_jump_range_index(ii)
-    tempo_results.jump_ranges.append((xmin,xmax))
+    tempo_results.ordered_jump_ranges.append((xmin,xmax))
+    tempo_results.toa_jump_ranges.append((tempo_results.ordered_index[xmin], tempo_results.ordered_index[xmax]))
     plot_jump_range((xmin,xmax))
     redrawplot()
 
@@ -758,7 +761,8 @@ def plot_jump_range(jump_range):
 def delete_jump_range_index(index):
     global tempo_results
     global ax_jump_ranges
-    del tempo_results.jump_ranges[index]
+    del tempo_results.ordered_jump_ranges[index]
+    del tempo_results.toa_jump_ranges[index]
     for ax in ax_jump_ranges:
         ax.pop(index).remove()
 

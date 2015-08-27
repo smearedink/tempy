@@ -168,6 +168,7 @@ class TOAfile:
         self.mode = mode
         self.track = track
         self.default_format = default_format
+        self.sorted_TOAs = []
 
     @classmethod
     def from_tim_file(cls, fname):
@@ -239,19 +240,39 @@ class TOAfile:
 
     def get_position_of_TOA(self, n):
         TOAset_index = 1
-        while self.get_nTOAs(TOAset_index) < n:
+        while self.get_nTOAs(TOAset_index) <= n:
             TOAset_index += 1
         return (TOAset_index-1, n-self.get_nTOAs(TOAset_index-1))
         
+    def get_ordered_index_of_position(self, pos):
+        """
+        pos is a tuple: (index of TOAset, index of TOA in TOAset)
+        
+        Returns what index would be for this TOA in an ordered list of TOAs
+        """
+        TOA_at_pos = self.TOAsets[pos[0]].TOAs[pos[1]]
+        all_TOAs = []
+        for tset in self.TOAsets:
+            for toa in tset.TOAs:
+                all_TOAs.append(toa)
+        if len(self.sorted_TOAs) != self.get_nTOAs():
+            self.sorted_TOAs = sorted(all_TOAs)
+        return self.sorted_TOAs.index(TOA_at_pos)
 
-    def get_jump_ranges(self):
+    def get_jump_ranges(self, chronological=False):
         jump_ranges = []
         for TOAset_index in range(self.get_nTOAsets()):
             if self.TOAsets[TOAset_index].jumped:
                 jstart = self.get_nTOAs(TOAset_index)
                 jend = jstart + self.TOAsets[TOAset_index].get_nTOAs()-1
+                if chronological:
+                    jstart_pos = self.get_position_of_TOA(jstart)
+                    jend_pos = self.get_position_of_TOA(jend)
+                    jstart = self.get_ordered_index_of_position(jstart_pos)
+                    jend = self.get_ordered_index_of_position(jend_pos)
                 jump_ranges.append((jstart,jend))
         return jump_ranges
+
 
     def rearrange_jumps(self, jump_ranges):
         phase_wrap_indices = {}
