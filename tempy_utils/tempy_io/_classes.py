@@ -1,4 +1,5 @@
 from astropy import time as _atime
+import numpy as np
 
 class TOA:
     """
@@ -162,13 +163,13 @@ class TOAfile:
     def __init__(self, TOAsets=[], phase_wraps={}, mode=None, track=None,
                  default_format='princeton'):
         self.TOAsets = TOAsets
-        # phase_wraps keys are tuple (TOAsets index, TOAset.TOAs index)
+        # phase_wraps keys are position tuple (TOAsets index, TOAset.TOAs index)
         # and values are phase wrap value (eg, -2)
         self.phase_wraps = phase_wraps
         self.mode = mode
         self.track = track
         self.default_format = default_format
-        self.sorted_TOAs = []
+        self._update_index_mapping()
 
     @classmethod
     def from_tim_file(cls, fname):
@@ -237,39 +238,47 @@ class TOAfile:
         else:
             return sum([tset.get_nTOAs() for tset in
                        self.TOAsets[:before_TOAset_index]])
-
-    def get_position_of_TOA(self, n):
-        TOAset_index = 1
-        while self.get_nTOAs(TOAset_index) <= n:
-            TOAset_index += 1
-        return (TOAset_index-1, n-self.get_nTOAs(TOAset_index-1))
         
-    def get_ordered_index_of_position(self, pos):
+    def _update_index_mapping(self):
         """
-        pos is a tuple: (index of TOAset, index of TOA in TOAset)
-        
-        Returns what index would be for this TOA in an ordered list of TOAs
+        Updates dictionaries that provide easy mapping between positions,
+        input indices, and ordered (by time) indices of TOAs
         """
-        TOA_at_pos = self.TOAsets[pos[0]].TOAs[pos[1]]
-        all_TOAs = []
-        for tset in self.TOAsets:
-            for toa in tset.TOAs:
-                all_TOAs.append(toa)
-        if len(self.sorted_TOAs) != self.get_nTOAs():
-            self.sorted_TOAs = sorted(all_TOAs)
-        return self.sorted_TOAs.index(TOA_at_pos)
+        self.position_to_input_index = {}
+        self.position_to_ordered_index = {}
+        self.input_index_to_position = {}
+        self.ordered_index_to_position = {}
+        input_index = 0
+        sort_me = []
+        for TOAset_i in range(self.get_nTOAsets()):
+            for TOA_i in range(self.TOAsets[TOAset_i].get_nTOAs()):
+                position = (TOAset_i, TOA_i)
+                self.input_index_to_position[input_index] = position
+                self.position_to_input_index[position] = input_index
+                input_index += 1
+                sort_me.append(self.TOAsets[TOAset_i].TOAs[TOA_i].MJD)
+        self.ordered_index_to_input_index = list(np.argsort(sort_me))
+        self.input_index_to_ordered_index = list(np.argsort(self.ordered_index_to_input_index))
+        for ordered_index in range(self.get_nTOAs()):
+            input_index = self.ordered_index_to_input_index[ordered_index]
+            position = self.input_index_to_position[input_index]
+            self.position_to_ordered_index[position] = ordered_index
+            self.ordered_index_to_position[ordered_index] = position
 
     def get_jump_ranges(self, chronological=False):
+        """
+        Returns start/end tuples for jumps
+        """
         jump_ranges = []
         for TOAset_index in range(self.get_nTOAsets()):
             if self.TOAsets[TOAset_index].jumped:
                 jstart = self.get_nTOAs(TOAset_index)
                 jend = jstart + self.TOAsets[TOAset_index].get_nTOAs()-1
                 if chronological:
-                    jstart_pos = self.get_position_of_TOA(jstart)
-                    jend_pos = self.get_position_of_TOA(jend)
-                    jstart = self.get_ordered_index_of_position(jstart_pos)
-                    jend = self.get_ordered_index_of_position(jend_pos)
+                    jstart_pos = self.input_index_to_position[jstart]
+                    jend_pos = self.input_index_to_position[jend]
+                    jstart = self.position_to_ordered_index[jstart_pos]
+                    jend = self.position_to_ordered_index[jend_pos]
                 jump_ranges.append((jstart,jend))
         return jump_ranges
 

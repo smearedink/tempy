@@ -79,6 +79,11 @@ class TempoHistory:
         if index is None:
             index = self.current_index
         return self.outpars[index]
+        
+    def get_timfile(self, index=None):
+        if index is None:
+            index = self.current_index
+        return self.timfiles[index]
 
     def save_inpar(self, fname):
         with open(fname, 'w') as f:
@@ -113,12 +118,8 @@ class TempoHistory:
                 if output_par[par].error is None:
                     val = "%s" % output_par[par].value
                 else:
-                    if par == 'RAJ' or par == 'DECJ':
-                        err = output_par[par].error
-                        if err > 59:
-                            val = "%s +/- %f" % (output_par[par].value,
-                                                 err)
-                        else:
+                    try:
+                        if par == 'RAJ' or par == 'DECJ':
                             split_str = output_par[par].value.split(':')
                             split_str[-1] = un2str(float(split_str[-1]),
                                                    output_par[par].error)
@@ -126,7 +127,10 @@ class TempoHistory:
                             for item in split_str:
                                 val += item + ":"
                             val = val[:-1]
-                    else:
-                        val = un2str(output_par[par].value,
-                                     output_par[par].error)
+                        else:
+                            val = un2str(output_par[par].value,
+                                         output_par[par].error)
+                    except:
+                        err = output_par[par].error
+                        val = "%s +/- %f" % (output_par[par].value, err)
                 print formatted_par_line % (par, fit_str, val)

@@ -76,8 +76,8 @@ class TempoResults:
 
         # if there are jumps in the tim file, we want to include those in the
         # initial plot
-        self.toa_jump_ranges = tim.get_jump_ranges()
-        self.ordered_jump_ranges = tim.get_jump_ranges(chronological=True)
+        self.jump_ranges = tim.get_jump_ranges()
+        #self.ordered_jump_ranges = tim.get_jump_ranges(chronological=True)
 
         # Record filename
         self.inparfn = inparfn
@@ -401,7 +401,7 @@ def plot_data(tempo_results, xkey, ykey,
         subplot += 1
 
     # Plot jump ranges
-    for jstart,jend in tempo_results.ordered_jump_ranges:
+    for jstart,jend in tempo_results.jump_ranges:
         plot_jump_range((jstart,jend))
 #        axes[-1].set_ylim((ymin, ymax))
 
@@ -618,13 +618,13 @@ def run_tempo():
     for wrap_index in tempo_results.phase_wraps:
         #tim_wrap_index = np.where(tim_ordered_index == wrap_index)[0][0]
         #tim.phase_wraps[tim_wrap_index] = tempo_results.phase_wraps[wrap_index]
-        tim.phase_wraps[tim.get_position_of_TOA(wrap_index)] = \
+        tim.phase_wraps[tim.input_index_to_position[wrap_index]] = \
           tempo_results.phase_wraps[wrap_index]
     #for jstart,jend in tempo_results.jump_ranges:
     #    tim_jstart = np.where(tim_ordered_index == jstart)[0][0]
     #    tim_jend = np.where(tim_ordered_index == jend)[0][0]
     #    tim.jump_ranges.append((tim_jstart,tim_jend))
-    tim.rearrange_jumps(tempo_results.toa_jump_ranges)
+    tim.rearrange_jumps(tempo_results.jump_ranges)
     if tempo_results.intimfn.split('.')[-1] == 'tempy':
         new_timfn = tempo_results.intimfn
     else:
@@ -661,7 +661,7 @@ def is_in_jump_range(index):
     this index is not in a jump range
     """
     global tempo_results
-    for ii,(jstart,jend) in enumerate(tempo_results.ordered_jump_ranges):
+    for ii,(jstart,jend) in enumerate(tempo_results.jump_ranges):
         if index >= jstart and index <= jend:
             return ii
     return None
@@ -673,7 +673,7 @@ def jump_ranges_between(index1, index2):
     """
     global tempo_results
     which_jump_ranges = []
-    for ii,(jstart,jend) in enumerate(tempo_results.ordered_jump_ranges):
+    for ii,(jstart,jend) in enumerate(tempo_results.jump_ranges):
         if (jend >= index1 and jend <= index2) or \
           (jstart <= index2 and jstart >= index1):
             which_jump_ranges.append(ii)
@@ -681,14 +681,20 @@ def jump_ranges_between(index1, index2):
 
 def select_jump_range(xdata_min, xdata_max):
     global tempo_results
+    global tempo_history
     global options
     global ax_types
     if options.xaxis == 'mjd':
         xmin, xmax = np.searchsorted(tempo_results.ordered_MJDs,
                                      [xdata_min, xdata_max])
+        tim = tempo_history.get_timfile()
+        xmin = tim.ordered_index_to_input_index[xmin]
+        xmax = tim.ordered_index_to_input_index[xmax]
     elif options.xaxis == 'year':
         all_years = mjd_to_year(tempo_results.ordered_MJDs)
         xmin, xmax = np.searchsorted(all_years, [xdata_min, xdata_max])
+        xmin = tim.ordered_index_to_input_index[xmin]
+        xmax = tim.ordered_index_to_input_index[xmax]
     elif options.xaxis == 'numtoa':
         xmin = int(np.ceil(xdata_min))
         xmax = int(np.floor(xdata_max))
@@ -706,20 +712,21 @@ def select_jump_range(xdata_min, xdata_max):
     for ii in reversed(sorted(which_jump_ranges)):
         #del tempo_results.jump_ranges[ii]
         delete_jump_range_index(ii)
-    tempo_results.ordered_jump_ranges.append((xmin,xmax))
-    tempo_results.toa_jump_ranges.append((tempo_results.ordered_index[xmin], tempo_results.ordered_index[xmax]))
+    tempo_results.jump_ranges.append((xmin,xmax))
     plot_jump_range((xmin,xmax))
     redrawplot()
 
 def plot_jump_range(jump_range):
     global tempo_results
+    global tempo_history
     global options
     global ax_jump_ranges
     global axes
     #ax = axes[ax_types.index(ax_type)]
+    tim = tempo_history.get_timfile()
     jstart,jend = jump_range
-    jstart_mjd = tempo_results.ordered_MJDs[jstart]
-    jend_mjd = tempo_results.ordered_MJDs[jend]
+    jstart_mjd = tempo_results.ordered_MJDs[tim.input_index_to_ordered_index[jstart]]
+    jend_mjd = tempo_results.ordered_MJDs[tim.input_index_to_ordered_index[jend]]
     extend_frac = 0.1
     if jstart > 0:
         jstart_mjd_before = tempo_results.ordered_MJDs[jstart-1]
@@ -762,20 +769,23 @@ def plot_jump_range(jump_range):
 def delete_jump_range_index(index):
     global tempo_results
     global ax_jump_ranges
-    del tempo_results.ordered_jump_ranges[index]
-    del tempo_results.toa_jump_ranges[index]
+    del tempo_results.jump_ranges[index]
     for ax in ax_jump_ranges:
         ax.pop(index).remove()
 
 def delete_jump_range(xdata):
     global tempo_results
+    global tempo_history
     global options
     global ax_jump_ranges
+    tim = tempo_history.get_timfile()
     if options.xaxis == 'mjd':
         where_clicked = np.searchsorted(tempo_results.ordered_MJDs, xdata)
+        where_clicked = tim.ordered_index_to_input_index[where_clicked]
     elif options.xaxis == 'year':
         all_years = mjd_to_year(tempo_results.ordered_MJDs)
         where_clicked = np.searchsorted(all_years, xdata)
+        where_clicked = tim.ordered_index_to_input_index[where_clicked]
     elif options.xaxis == 'numtoa':
         where_clicked = xdata
     else:
