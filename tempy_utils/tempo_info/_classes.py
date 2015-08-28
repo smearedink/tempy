@@ -114,13 +114,18 @@ class TempoHistory:
                     val = "%s" % output_par[par].value
                 else:
                     if par == 'RAJ' or par == 'DECJ':
-                        split_str = output_par[par].value.split(':')
-                        split_str[-1] = un2str(float(split_str[-1]),
-                                               output_par[par].error)
-                        val = ''
-                        for item in split_str:
-                            val += item + ":"
-                        val = val[:-1]
+                        err = output_par[par].error
+                        if err > 59:
+                            val = "%s +/- %f" % (output_par[par].value,
+                                                 err)
+                        else:
+                            split_str = output_par[par].value.split(':')
+                            split_str[-1] = un2str(float(split_str[-1]),
+                                                   output_par[par].error)
+                            val = ''
+                            for item in split_str:
+                                val += item + ":"
+                            val = val[:-1]
                     else:
                         val = un2str(output_par[par].value,
                                      output_par[par].error)
