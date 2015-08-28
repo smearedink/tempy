@@ -76,7 +76,7 @@ class CheckButtons(Widget):
             self.rectangles.append(p)
             self.lines.append((l1))#,l2))
             ax.add_patch(p)
-            ax.add_line(l1)
+            ax.add_patch(l1)
             #ax.add_line(l2)
             cnt += 1
 
