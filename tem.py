@@ -11,6 +11,7 @@ import subprocess
 from shutil import copyfile
 
 import matplotlib
+matplotlib.use("TkAgg")
 import matplotlib.pyplot as plt
 from matplotlib.transforms import offset_copy
 from matplotlib.widgets import SpanSelector
